@@ -148,8 +148,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b58f508d283dc0648aee375c230b50ed, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AnimalGrid.Gameplay.GameplayBootstrap
-  canvas: {fileID: 0}
-  overrideLevelNumber: 1
+  canvas: {fileID: 782604608}
+  overrideLevelNumber: 0
+  homeVideo: {fileID: 32900000, guid: 96e39068c76e9c34688c2497a7cb30aa, type: 3}
 --- !u!4 &435087591
 Transform:
   m_ObjectHideFlags: 0

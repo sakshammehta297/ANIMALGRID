@@ -10,8 +10,7 @@ using AnimalGrid.Save;
 namespace AnimalGrid.Gameplay
 {
     /// <summary>
-    /// Entry point: campaign-driven home + level start.
-    /// Video/background layers, world roster, tutorial trigger.
+    /// Entry point: campaign-driven home + collection + level start.
     /// </summary>
     public class GameplayBootstrap : MonoBehaviour
     {
@@ -225,6 +224,14 @@ namespace AnimalGrid.Gameplay
                     new Vector2(0f, -400f), fraction, barLabel, new Color(0.5f, 0.4f, 0.32f));
             }
 
+            var collectionBtn = UiFactory.MakeButton(panel.transform, "Collection", new Vector2(0f, -580f),
+                new Vector2(420f, 110f), new Color(0.87f, 0.78f, 0.62f), new Color(0.3f, 0.2f, 0.1f));
+            collectionBtn.onClick.AddListener(() =>
+            {
+                SoundManager.Instance?.PlayButton();
+                BuildCollectionOverlay();
+            });
+
             var reset = UiFactory.MakeButton(panel.transform, "Reset Progress", new Vector2(0f, -820f),
                 new Vector2(380f, 90f), new Color(0.8f, 0.75f, 0.7f), new Color(0.35f, 0.25f, 0.2f));
             reset.onClick.AddListener(() =>
@@ -235,6 +242,89 @@ namespace AnimalGrid.Gameplay
                 ReturnToGame = false;
                 SceneManager.LoadScene(SceneManager.GetActiveScene().name);
             });
+        }
+
+        // ---------- Collection screen (trophy room) ----------
+
+        private void BuildCollectionOverlay()
+        {
+            var panel = UiFactory.MakePanel(canvas.transform, new Color(0.97f, 0.94f, 0.89f, 1f));
+
+            UiFactory.MakeText(panel.transform, "Collection", new Vector2(0f, 830f),
+                new Vector2(700f, 140f), 84, new Color(0.35f, 0.22f, 0.15f));
+
+            var back = UiFactory.MakeButton(panel.transform, "Back", new Vector2(-400f, 840f),
+                new Vector2(220f, 90f), new Color(0.8f, 0.75f, 0.7f), new Color(0.35f, 0.25f, 0.2f));
+            back.onClick.AddListener(() =>
+            {
+                SoundManager.Instance?.PlayButton();
+                Destroy(panel);
+            });
+
+            for (int w = 0; w < Worlds.Count; w++)
+            {
+                var world = Worlds.Get(w);
+                int unlockedCount = campaign.UnlockedInWorld(w);
+                bool worldLocked = w > campaign.worldIndex && !campaign.gameCompleted;
+                float blockTop = 680f - w * 560f;
+
+                string header = world.name + "  ·  " + unlockedCount + "/10"
+                    + (worldLocked ? "  ·  Locked" : "");
+                UiFactory.MakeText(panel.transform, header, new Vector2(0f, blockTop),
+                    new Vector2(900f, 80f), 48, new Color(0.45f, 0.3f, 0.2f));
+
+                for (int i = 0; i < world.animalIds.Length; i++)
+                {
+                    int row = i / 5;
+                    int col = i % 5;
+                    float x = -340f + col * 170f;
+                    float y = blockTop - 160f - row * 220f;
+                    bool unlocked = i < unlockedCount;
+                    MakeSlot(panel.transform, new Vector2(x, y), world.animalIds[i], unlocked);
+                }
+            }
+        }
+
+        private void MakeSlot(Transform parent, Vector2 pos, string animalId, bool unlocked)
+        {
+            var root = new GameObject("Slot_" + animalId, typeof(RectTransform));
+            root.transform.SetParent(parent, false);
+            var rect = root.transform as RectTransform;
+            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = pos;
+            rect.sizeDelta = new Vector2(150f, 200f);
+
+            var iconGo = new GameObject("Icon", typeof(RectTransform), typeof(Image));
+            iconGo.transform.SetParent(root.transform, false);
+            var iRect = iconGo.transform as RectTransform;
+            iRect.anchorMin = iRect.anchorMax = new Vector2(0.5f, 0.5f);
+            iRect.anchoredPosition = new Vector2(0f, 30f);
+            iRect.sizeDelta = new Vector2(140f, 140f);
+            var img = iconGo.GetComponent<Image>();
+            var sprite = ArtLoader.GetAnimal(animalId);
+            if (sprite != null)
+            {
+                img.sprite = sprite;
+                img.preserveAspect = true;
+                img.color = unlocked ? Color.white : new Color(0.15f, 0.12f, 0.12f, 0.9f);
+            }
+            else
+            {
+                img.sprite = UiSprites.RoundedSquare;
+                img.color = unlocked ? new Color(0.85f, 0.8f, 0.75f) : new Color(0.3f, 0.27f, 0.25f, 0.9f);
+            }
+            img.raycastTarget = false;
+
+            if (sprite == null)
+            {
+                UiFactory.MakeText(root.transform, unlocked ? "!" : "?", new Vector2(0f, 30f),
+                    new Vector2(100f, 100f), 60,
+                    unlocked ? Color.white : new Color(1f, 1f, 1f, 0.6f));
+            }
+
+            UiFactory.MakeText(root.transform, unlocked ? Worlds.DisplayName(animalId) : "???",
+                new Vector2(0f, -70f), new Vector2(160f, 50f), 32,
+                unlocked ? new Color(0.35f, 0.22f, 0.15f) : new Color(0.6f, 0.55f, 0.5f));
         }
 
         // ---------- Level start ----------

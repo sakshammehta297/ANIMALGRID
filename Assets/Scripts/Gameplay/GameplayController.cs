@@ -11,7 +11,8 @@ namespace AnimalGrid.Gameplay
 {
     /// <summary>
     /// The on-screen referee: strict correctness, lives, hints, boss intro,
-    /// tutorial with pointing ring, campaign-aware advancement.
+    /// tutorial with pointing ring, campaign-aware advancement, celebrations.
+    /// DEBUG keys: S auto-solve | U/K/I celebration previews | P/M campaign fast-forward.
     /// </summary>
     public class GameplayController : MonoBehaviour
     {
@@ -65,6 +66,8 @@ namespace AnimalGrid.Gameplay
         private GameObject tutorialNextGo;
         private GameObject pointerGo;
 
+        private ClearResult pendingResult;
+
         private static readonly Color HeartFull = new Color(0.90f, 0.25f, 0.35f);
         private static readonly Color HeartLost = new Color(0.6f, 0.6f, 0.6f, 0.35f);
 
@@ -114,6 +117,11 @@ namespace AnimalGrid.Gameplay
 
         private void Update()
         {
+            // DEBUG: auto-solve
+            if (Input.GetKeyDown(KeyCode.S) && !finished && !inputLocked)
+            {
+                AutoSolve();
+            }
             // DEBUG celebration previews: U = unlock, K = world complete, I = finale
             if (Input.GetKeyDown(KeyCode.U) && !finished)
             {
@@ -133,7 +141,22 @@ namespace AnimalGrid.Gameplay
             {
                 pendingResult = new ClearResult { worldCompleted = true, gameCompleted = true };
                 ShowFinaleOverlay();
-            }        }
+            }
+            // DEBUG campaign fast-forward: P = +10 bar points, M = bar almost full (179)
+            if (Input.GetKeyDown(KeyCode.P) && !finished)
+            {
+                campaign.worldPoints[worldIndex] =
+                    Mathf.Min(campaign.worldPoints[worldIndex] + 10, UnlockProgression.MaxPoints);
+                CampaignSave.Save(campaign);
+                Debug.Log("DEBUG points -> " + campaign.worldPoints[worldIndex]);
+            }
+            if (Input.GetKeyDown(KeyCode.M) && !finished)
+            {
+                campaign.worldPoints[worldIndex] = UnlockProgression.MaxPoints - 1;
+                CampaignSave.Save(campaign);
+                Debug.Log("DEBUG points -> 179 (win + Next to complete the world)");
+            }
+        }
 
         // ---------- Tutorial ----------
 
@@ -490,6 +513,7 @@ namespace AnimalGrid.Gameplay
 
             ShowPraise(PraiseWords[(scoredCells.Count - 1) % PraiseWords.Length]);
         }
+
         private void ShowPraise(string word)
         {
             StartCoroutine(FloatText(canvas.transform, word,
@@ -569,11 +593,7 @@ namespace AnimalGrid.Gameplay
             });
         }
 
-        /// <summary>
-        /// The bar fills HERE: when the player moves on. Boss fills twice.
-        /// Replay / Try Again never record.
-        /// </summary>
-        private ClearResult pendingResult;
+        // ---------- Campaign advancement & celebrations ----------
 
         private void AdvanceCampaign()
         {
@@ -602,8 +622,6 @@ namespace AnimalGrid.Gameplay
             if (pendingResult != null && pendingResult.worldCompleted) { ShowWorldOverlay(); return; }
             FinishAdvance();
         }
-
-        // ---------- Celebrations ----------
 
         private void ShowUnlockOverlay(int animalIndex)
         {
@@ -684,6 +702,7 @@ namespace AnimalGrid.Gameplay
                 SceneManager.LoadScene(SceneManager.GetActiveScene().name);
             });
         }
+
         private void ReloadScene()
         {
             GameplayBootstrap.ReturnToGame = true;
@@ -832,6 +851,8 @@ namespace AnimalGrid.Gameplay
             scoreText.fontSize = 56;
             scoreText.alignment = TextAnchor.MiddleCenter;
             scoreText.color = new Color(0.35f, 0.2f, 0.25f);
+            scoreText.text = "Score 0";
+            scoreText.raycastTarget = false;
 
             // Unlock progress bar (HUD)
             int pts = campaign.worldPoints[worldIndex];
