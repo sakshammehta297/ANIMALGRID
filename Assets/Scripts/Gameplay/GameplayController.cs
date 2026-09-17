@@ -5,13 +5,13 @@ using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 using AnimalGrid.Core;
 using AnimalGrid.Audio;
+using AnimalGrid.Save;
 
 namespace AnimalGrid.Gameplay
 {
     /// <summary>
-    /// The on-screen referee.
-    /// Input language: SINGLE tap = X mark, DOUBLE tap = place animal, tap placed = remove.
-    /// Strict correctness, 3 lives, logical hints, boss intro, tutorial with pointing ring.
+    /// The on-screen referee: strict correctness, lives, hints, boss intro,
+    /// tutorial with pointing ring, campaign-aware advancement.
     /// </summary>
     public class GameplayController : MonoBehaviour
     {
@@ -24,8 +24,10 @@ namespace AnimalGrid.Gameplay
         private PuzzleState state;
         private Canvas canvas;
         private LevelConfig config;
+        private CampaignState campaign;
 
         private int levelNumber = 1;
+        private int worldIndex;
         private bool isBoss;
         private bool inputLocked;
 
@@ -43,19 +45,18 @@ namespace AnimalGrid.Gameplay
         private int hintsLeft = 3;
         private int placementsDone;
         private int invalidAttempts;
+        private readonly HashSet<int> scoredCells = new HashSet<int>();
         private int score;
         private bool finished;
 
         private float startTime = -1f;
         private bool timerStarted;
 
-        // Tap tracking
         private int lastTapRow = -1;
         private int lastTapCol = -1;
         private float lastTapTime = -1f;
         private LastAction lastAction = LastAction.None;
 
-        // Tutorial state
         private bool tutorialActive;
         private int tutorialStep;
         private string[] tutorialSteps;
@@ -72,12 +73,15 @@ namespace AnimalGrid.Gameplay
             "Nice!", "Great!", "Perfect!", "Excellent!", "Amazing!", "Unreal!", "Brilliant!", "Superb!"
         };
 
-        public void Initialize(BoardView board, PuzzleDefinition puzzle, int levelNumber, LevelConfig config)
+        public void Initialize(BoardView board, PuzzleDefinition puzzle, int levelNumber,
+            LevelConfig config, CampaignState campaign)
         {
             this.board = board;
             this.puzzle = puzzle;
             this.levelNumber = levelNumber;
             this.config = config;
+            this.campaign = campaign;
+            this.worldIndex = campaign.worldIndex;
             this.isBoss = config.isBoss;
             this.canvas = board.GetComponentInParent<Canvas>();
 
@@ -110,14 +114,13 @@ namespace AnimalGrid.Gameplay
 
         private void Update()
         {
-            // DEBUG cheat: press S in the editor to auto-solve
             if (Input.GetKeyDown(KeyCode.S) && !finished && !inputLocked)
             {
                 AutoSolve();
             }
         }
 
-        // ---------- Tutorial (spec 27) with pointing ring ----------
+        // ---------- Tutorial ----------
 
         public void StartTutorial()
         {
@@ -133,7 +136,7 @@ namespace AnimalGrid.Gameplay
                 "SINGLE tap a cell = X mark. It means 'impossible'.",
                 "Try it! SINGLE tap the ringed cell to X it.",
                 "DOUBLE tap the same cell quickly = place an animal there.",
-                "Try it! DOUBLE tap the correct cell to place your first animal. Stuck? Tap the ringed hint button!"
+                "Now DOUBLE tap the ringed cell - that is your first animal's true spot!"
             };
             BuildTutorialPanel();
             BuildPointer();
@@ -190,7 +193,7 @@ namespace AnimalGrid.Gameplay
                 int mid = puzzle.gridSize / 2;
                 target = board.GetCellView(mid, mid).GetComponent<RectTransform>();
             }
-            else if (tutorialStep == 7) target = hintRoot.transform as RectTransform;
+            else if (tutorialStep == 7) target = FirstUnplacedSolutionCell();
 
             if (pointerGo != null)
             {
@@ -199,23 +202,36 @@ namespace AnimalGrid.Gameplay
             }
         }
 
+        private RectTransform FirstUnplacedSolutionCell()
+        {
+            foreach (var pos in puzzle.solution)
+            {
+                if (state.GetCell(pos.row, pos.column).state != CellState.Selected)
+                {
+                    return board.GetCellView(pos.row, pos.column).GetComponent<RectTransform>();
+                }
+            }
+            return hintRoot.transform as RectTransform;
+        }
+
         private void EndTutorial()
         {
             tutorialActive = false;
-            ProgressionSave.TutorialDone = true;
+            CampaignSave.TutorialDone = true;
             if (tutorialPanel != null) Destroy(tutorialPanel);
             if (pointerGo != null) Destroy(pointerGo);
             ShowPraise("Great job!");
         }
 
-        // ---------- Boss intro (spec 9) ----------
+        // ---------- Boss intro ----------
 
         private void BuildBossIntro()
         {
             var panel = UiFactory.MakePanel(canvas.transform, new Color(0f, 0f, 0f, 0.72f));
             UiFactory.MakeText(panel.transform, "CHALLENGE LEVEL", new Vector2(0f, 300f),
                 new Vector2(950f, 160f), 84, new Color(0.95f, 0.3f, 0.3f));
-            UiFactory.MakeText(panel.transform, "LEVEL " + levelNumber, new Vector2(0f, 160f),
+            UiFactory.MakeText(panel.transform,
+                "W" + (worldIndex + 1) + " - LEVEL " + levelNumber, new Vector2(0f, 160f),
                 new Vector2(700f, 120f), 64, Color.white);
             UiFactory.MakeText(panel.transform,
                 config.gridSize + "×" + config.gridSize + "  —  Find " + config.gridSize + " animals",
@@ -231,7 +247,7 @@ namespace AnimalGrid.Gameplay
             });
         }
 
-        // ---------- Input: single tap = X, double tap = place ----------
+        // ---------- Input ----------
 
         private void OnCellTapped(int row, int col)
         {
@@ -250,7 +266,6 @@ namespace AnimalGrid.Gameplay
                 return;
             }
 
-            // Single tap
             lastTapRow = row;
             lastTapCol = col;
             lastTapTime = Time.time;
@@ -279,7 +294,6 @@ namespace AnimalGrid.Gameplay
                 return;
             }
 
-            // Eliminated -> clear X
             state.ClearCell(row, col);
             RefreshCell(row, col);
             lastAction = LastAction.ClearedX;
@@ -308,7 +322,6 @@ namespace AnimalGrid.Gameplay
         {
             var cell = state.GetCell(row, col);
 
-            // Double tap on an already placed animal removes it
             if (cell.state == CellState.Selected)
             {
                 state.ClearCell(row, col);
@@ -439,11 +452,17 @@ namespace AnimalGrid.Gameplay
         private void RegisterPlacement(int row, int col, string colorId)
         {
             placementsDone++;
-            int points = 96 * (5 + placementsDone);
+
+            // Each box scores AT MOST ONCE per level (no remove/re-place farming)
+            int key = row * puzzle.gridSize + col;
+            bool firstTime = scoredCells.Add(key);
+            if (!firstTime) return;
+
+            int points = 96 * (5 + scoredCells.Count);
             score += points;
             if (scoreText != null) scoreText.text = "Score " + score;
 
-                       if (trayTokensByColor != null && trayTokensByColor.ContainsKey(colorId))
+            if (trayTokensByColor != null && trayTokensByColor.ContainsKey(colorId))
             {
                 var tokenImage = trayTokensByColor[colorId];
                 bool hasSprite = tokenImage.sprite != null && tokenImage.sprite != UiSprites.Circle;
@@ -454,9 +473,8 @@ namespace AnimalGrid.Gameplay
             StartCoroutine(FloatText(view.transform, "+" + points,
                 new Color(1f, 0.6f, 0.1f), 56, Vector2.zero, new Vector2(0f, 140f)));
 
-            ShowPraise(PraiseWords[(placementsDone - 1) % PraiseWords.Length]);
+            ShowPraise(PraiseWords[(scoredCells.Count - 1) % PraiseWords.Length]);
         }
-
         private void ShowPraise(string word)
         {
             StartCoroutine(FloatText(canvas.transform, word,
@@ -524,7 +542,7 @@ namespace AnimalGrid.Gameplay
             next.onClick.AddListener(() =>
             {
                 SoundManager.Instance?.PlayButton();
-                AdvanceAndReload();
+                AdvanceCampaign();
             });
 
             var replay = UiFactory.MakeButton(panel.transform, "Replay", new Vector2(0f, -350f),
@@ -536,14 +554,24 @@ namespace AnimalGrid.Gameplay
             });
         }
 
-        private void AdvanceAndReload()
+        /// <summary>
+        /// The bar fills HERE: when the player moves on. Boss fills twice.
+        /// Replay / Try Again never record.
+        /// </summary>
+        private void AdvanceCampaign()
         {
-            int next = levelNumber + 1;
-            if (next > ProgressionSave.CurrentLevel)
+            var result = campaign.RecordLevelClear(isBoss);
+            CampaignSave.Save(campaign);
+            Debug.Log("ADVANCE -> World " + (result.nextWorld + 1) + " Level " + result.nextLevel
+                + (result.worldCompleted ? " [WORLD COMPLETE]" : "")
+                + (result.gameCompleted ? " [GAME COMPLETE]" : ""));
+            if (result.worldCompleted)
             {
-                ProgressionSave.CurrentLevel = next;
+                Debug.Log(result.gameCompleted ? "GAME COMPLETE!" : "WORLD COMPLETE!");
             }
-            ReloadScene();
+
+            GameplayBootstrap.ReturnToGame = !result.gameCompleted;
+            SceneManager.LoadScene(SceneManager.GetActiveScene().name);
         }
 
         private void ReloadScene()
@@ -674,10 +702,12 @@ namespace AnimalGrid.Gameplay
             lRect.sizeDelta = new Vector2(420f, 110f);
             var levelText = levelGo.GetComponent<Text>();
             levelText.font = UiFonts.Default;
-            levelText.fontSize = isBoss ? 48 : 56;
+            levelText.fontSize = isBoss ? 44 : 52;
             levelText.alignment = TextAnchor.MiddleCenter;
             levelText.color = isBoss ? new Color(0.85f, 0.2f, 0.25f) : new Color(0.35f, 0.2f, 0.25f);
-            levelText.text = isBoss ? "BOSS " + levelNumber : "Level " + levelNumber;
+            levelText.text = isBoss
+                ? "W" + (worldIndex + 1) + " BOSS " + levelNumber
+                : "W" + (worldIndex + 1) + " · L" + levelNumber;
             levelText.raycastTarget = false;
 
             var scoreGo = new GameObject("ScoreText", typeof(RectTransform), typeof(Text));
@@ -717,7 +747,8 @@ namespace AnimalGrid.Gameplay
                 float x = -total / 2f + tokenSize / 2f + i * (tokenSize + gap);
                 rect.anchoredPosition = new Vector2(x, 0f);
                 rect.sizeDelta = new Vector2(tokenSize, tokenSize);
-                                var img = token.GetComponent<Image>();
+                var img = token.GetComponent<Image>();
+                img.preserveAspect = true;
                 var animalSprite = ArtLoader.GetAnimal(animalIdByColor[colorId]);
                 img.sprite = animalSprite != null ? animalSprite : UiSprites.Circle;
                 if (animalSprite != null)
