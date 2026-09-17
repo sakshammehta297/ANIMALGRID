@@ -45,5 +45,12 @@ namespace AnimalGrid.Core
             if (index > All.Length - 1) index = All.Length - 1;
             return All[index];
         }
+
+        /// <summary>"dog" -> "Dog" for display.</summary>
+        public static string DisplayName(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return id;
+            return char.ToUpper(id[0]) + id.Substring(1);
+        }
     }
 }

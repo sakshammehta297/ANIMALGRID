@@ -206,9 +206,23 @@ namespace AnimalGrid.Gameplay
                     StartLevel();
                 });
 
-                UiFactory.MakeText(panel.transform,
-                    (campaign.levelInWorld - 1) + " / 180 levels in this world",
-                    new Vector2(0f, -360f), new Vector2(700f, 80f), 40, new Color(0.5f, 0.4f, 0.32f));
+                int pts = campaign.worldPoints[campaign.worldIndex];
+                int unlockedCount = campaign.UnlockedInWorld(campaign.worldIndex);
+                float fraction = UnlockProgression.BarFraction(pts);
+                string barLabel;
+                if (unlockedCount >= world.animalIds.Length)
+                {
+                    barLabel = world.name + " collection complete!";
+                    fraction = 1f;
+                }
+                else
+                {
+                    int nextTh = UnlockProgression.Thresholds[unlockedCount - 1];
+                    barLabel = "Level " + campaign.levelInWorld + "/180  ·  Next: "
+                        + Worlds.DisplayName(world.animalIds[unlockedCount]) + " " + pts + "/" + nextTh;
+                }
+                UiFactory.MakeUnlockBar(panel.transform, new Vector2(0.5f, 0.5f),
+                    new Vector2(0f, -400f), fraction, barLabel, new Color(0.5f, 0.4f, 0.32f));
             }
 
             var reset = UiFactory.MakeButton(panel.transform, "Reset Progress", new Vector2(0f, -820f),

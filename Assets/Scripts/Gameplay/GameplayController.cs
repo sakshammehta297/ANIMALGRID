@@ -114,11 +114,26 @@ namespace AnimalGrid.Gameplay
 
         private void Update()
         {
-            if (Input.GetKeyDown(KeyCode.S) && !finished && !inputLocked)
+            // DEBUG celebration previews: U = unlock, K = world complete, I = finale
+            if (Input.GetKeyDown(KeyCode.U) && !finished)
             {
-                AutoSolve();
+                pendingResult = new ClearResult();
+                ShowUnlockOverlay(1);
             }
-        }
+            if (Input.GetKeyDown(KeyCode.K) && !finished)
+            {
+                pendingResult = new ClearResult
+                {
+                    worldCompleted = true,
+                    nextWorld = Mathf.Min(worldIndex + 1, Worlds.Count - 1)
+                };
+                ShowWorldOverlay();
+            }
+            if (Input.GetKeyDown(KeyCode.I) && !finished)
+            {
+                pendingResult = new ClearResult { worldCompleted = true, gameCompleted = true };
+                ShowFinaleOverlay();
+            }        }
 
         // ---------- Tutorial ----------
 
@@ -558,22 +573,117 @@ namespace AnimalGrid.Gameplay
         /// The bar fills HERE: when the player moves on. Boss fills twice.
         /// Replay / Try Again never record.
         /// </summary>
+        private ClearResult pendingResult;
+
         private void AdvanceCampaign()
         {
             var result = campaign.RecordLevelClear(isBoss);
             CampaignSave.Save(campaign);
+            pendingResult = result;
             Debug.Log("ADVANCE -> World " + (result.nextWorld + 1) + " Level " + result.nextLevel
                 + (result.worldCompleted ? " [WORLD COMPLETE]" : "")
                 + (result.gameCompleted ? " [GAME COMPLETE]" : ""));
-            if (result.worldCompleted)
-            {
-                Debug.Log(result.gameCompleted ? "GAME COMPLETE!" : "WORLD COMPLETE!");
-            }
 
-            GameplayBootstrap.ReturnToGame = !result.gameCompleted;
+            if (result.newlyUnlocked.Count > 0) ShowUnlockOverlay(result.newlyUnlocked[0]);
+            else if (result.gameCompleted) ShowFinaleOverlay();
+            else if (result.worldCompleted) ShowWorldOverlay();
+            else FinishAdvance();
+        }
+
+        private void FinishAdvance()
+        {
+            GameplayBootstrap.ReturnToGame = pendingResult != null && !pendingResult.gameCompleted;
             SceneManager.LoadScene(SceneManager.GetActiveScene().name);
         }
 
+        private void ContinueAfterCelebration()
+        {
+            if (pendingResult != null && pendingResult.gameCompleted) { ShowFinaleOverlay(); return; }
+            if (pendingResult != null && pendingResult.worldCompleted) { ShowWorldOverlay(); return; }
+            FinishAdvance();
+        }
+
+        // ---------- Celebrations ----------
+
+        private void ShowUnlockOverlay(int animalIndex)
+        {
+            var world = Worlds.Get(worldIndex);
+            string id = world.animalIds[animalIndex];
+            var panel = UiFactory.MakePanel(canvas.transform, new Color(0f, 0f, 0f, 0.78f));
+
+            UiFactory.MakeText(panel.transform, "New pet unlocked!", new Vector2(0f, 430f),
+                new Vector2(900f, 140f), 80, new Color(1f, 0.85f, 0.2f));
+
+            var artGo = new GameObject("Art", typeof(RectTransform), typeof(Image));
+            artGo.transform.SetParent(panel.transform, false);
+            var aRect = artGo.transform as RectTransform;
+            aRect.anchorMin = aRect.anchorMax = new Vector2(0.5f, 0.5f);
+            aRect.anchoredPosition = new Vector2(0f, 90f);
+            aRect.sizeDelta = new Vector2(380f, 380f);
+            var aImg = artGo.GetComponent<Image>();
+            var sprite = ArtLoader.GetAnimal(id);
+            aImg.sprite = sprite != null ? sprite : UiSprites.Circle;
+            aImg.preserveAspect = true;
+            aImg.raycastTarget = false;
+
+            UiFactory.MakeText(panel.transform, Worlds.DisplayName(id), new Vector2(0f, -160f),
+                new Vector2(600f, 100f), 64, Color.white);
+            UiFactory.MakeText(panel.transform, "Added to your collection!", new Vector2(0f, -260f),
+                new Vector2(700f, 80f), 42, new Color(1f, 1f, 1f, 0.85f));
+
+            var btn = UiFactory.MakeButton(panel.transform, "Continue", new Vector2(0f, -420f),
+                new Vector2(420f, 120f), new Color(0.45f, 0.75f, 0.35f), Color.white);
+            btn.onClick.AddListener(() =>
+            {
+                SoundManager.Instance?.PlayButton();
+                Destroy(panel);
+                ContinueAfterCelebration();
+            });
+        }
+
+        private void ShowWorldOverlay()
+        {
+            int doneIndex = worldIndex;
+            if (pendingResult != null && !pendingResult.gameCompleted) doneIndex = pendingResult.nextWorld - 1;
+            var done = Worlds.Get(doneIndex);
+            var next = Worlds.Get(pendingResult != null ? pendingResult.nextWorld : worldIndex);
+
+            var panel = UiFactory.MakePanel(canvas.transform, new Color(0f, 0f, 0f, 0.8f));
+            UiFactory.MakeText(panel.transform, "WORLD COMPLETE!", new Vector2(0f, 380f),
+                new Vector2(950f, 150f), 84, new Color(1f, 0.85f, 0.2f));
+            UiFactory.MakeText(panel.transform, done.name + " - all 10 animals discovered!",
+                new Vector2(0f, 240f), new Vector2(900f, 90f), 46, Color.white);
+            UiFactory.MakeText(panel.transform, "A new world awaits...", new Vector2(0f, 140f),
+                new Vector2(700f, 80f), 42, new Color(1f, 1f, 1f, 0.8f));
+
+            var btn = UiFactory.MakeButton(panel.transform, "Enter " + next.name, new Vector2(0f, -300f),
+                new Vector2(520f, 130f), new Color(0.45f, 0.75f, 0.35f), Color.white);
+            btn.onClick.AddListener(() =>
+            {
+                SoundManager.Instance?.PlayButton();
+                FinishAdvance();
+            });
+        }
+
+        private void ShowFinaleOverlay()
+        {
+            var panel = UiFactory.MakePanel(canvas.transform, new Color(0f, 0f, 0f, 0.85f));
+            UiFactory.MakeText(panel.transform, "YOU DID IT!", new Vector2(0f, 420f),
+                new Vector2(950f, 160f), 90, new Color(1f, 0.85f, 0.2f));
+            UiFactory.MakeText(panel.transform, "All 3 worlds complete - 30 animals collected!",
+                new Vector2(0f, 280f), new Vector2(950f, 90f), 46, Color.white);
+            UiFactory.MakeText(panel.transform, "Thank you for playing. More worlds coming soon!",
+                new Vector2(0f, 180f), new Vector2(950f, 80f), 40, new Color(1f, 1f, 1f, 0.8f));
+
+            var btn = UiFactory.MakeButton(panel.transform, "Back to Home", new Vector2(0f, -300f),
+                new Vector2(460f, 130f), new Color(0.87f, 0.78f, 0.62f), new Color(0.3f, 0.2f, 0.1f));
+            btn.onClick.AddListener(() =>
+            {
+                SoundManager.Instance?.PlayButton();
+                GameplayBootstrap.ReturnToGame = false;
+                SceneManager.LoadScene(SceneManager.GetActiveScene().name);
+            });
+        }
         private void ReloadScene()
         {
             GameplayBootstrap.ReturnToGame = true;
@@ -722,8 +832,26 @@ namespace AnimalGrid.Gameplay
             scoreText.fontSize = 56;
             scoreText.alignment = TextAnchor.MiddleCenter;
             scoreText.color = new Color(0.35f, 0.2f, 0.25f);
-            scoreText.text = "Score 0";
-            scoreText.raycastTarget = false;
+
+            // Unlock progress bar (HUD)
+            int pts = campaign.worldPoints[worldIndex];
+            int unlockedCount = UnlockProgression.UnlockedCount(pts);
+            var barWorld = Worlds.Get(worldIndex);
+            float fraction = UnlockProgression.BarFraction(pts);
+            string barLabel;
+            if (unlockedCount >= barWorld.animalIds.Length)
+            {
+                barLabel = barWorld.name + " collection complete!";
+                fraction = 1f;
+            }
+            else
+            {
+                int nextTh = UnlockProgression.Thresholds[unlockedCount - 1];
+                barLabel = "Next: " + Worlds.DisplayName(barWorld.animalIds[unlockedCount])
+                    + "  ·  " + pts + "/" + nextTh;
+            }
+            UiFactory.MakeUnlockBar(canvas.transform, new Vector2(0.5f, 1f),
+                new Vector2(-140f, -235f), fraction, barLabel, Color.white);
 
             var tray = new GameObject("Tray", typeof(RectTransform));
             tray.transform.SetParent(canvas.transform, false);

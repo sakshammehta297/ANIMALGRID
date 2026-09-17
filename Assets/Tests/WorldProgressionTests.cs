@@ -119,5 +119,12 @@ namespace AnimalGrid.Tests
             Assert.AreEqual(2, state.worldIndex);
             Assert.AreEqual(10, state.UnlockedInWorld(2));
         }
+
+        [Test]
+        public void DisplayName_CapitalizesFirstLetter()
+        {
+            Assert.AreEqual("Dog", Worlds.DisplayName("dog"));
+            Assert.AreEqual("Clownfish", Worlds.DisplayName("clownfish"));
+        }
     }
 }
