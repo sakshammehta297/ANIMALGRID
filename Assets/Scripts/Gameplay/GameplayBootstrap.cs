@@ -11,7 +11,7 @@ using AnimalGrid.Save;
 namespace AnimalGrid.Gameplay
 {
     /// <summary>
-    /// Entry point: campaign-driven home + collection + settings + coming-soon entries + level start.
+    /// Entry point: home (static bg) + collection + settings + coming-soon + level start (game bg).
     /// </summary>
     public class GameplayBootstrap : MonoBehaviour
     {
@@ -23,14 +23,18 @@ namespace AnimalGrid.Gameplay
         [Tooltip("0 = use saved campaign. Set a number to test a specific level of the current world.")]
         public int overrideLevelNumber = 0;
 
-        [Tooltip("Optional looping video played behind the Home screen UI.")]
+        [Tooltip("Optional looping video played behind the Home screen UI (off by default).")]
         public VideoClip homeVideo;
 
         private CampaignState campaign;
+        private Image backgroundImage;
         private VideoPlayer videoPlayer;
         private RenderTexture videoRT;
         private GameObject videoHost;
         private GameObject videoImageGo;
+
+        private static readonly Color HomeCream = new Color(0.97f, 0.94f, 0.89f);
+        private static readonly Color GameCream = new Color(0.94f, 0.92f, 0.88f);
 
         private void Start()
         {
@@ -53,6 +57,7 @@ namespace AnimalGrid.Gameplay
             campaign = CampaignSave.Load();
 
             BuildBackground();
+            SetBackground("background", HomeCream);
 
             if (ReturnToGame)
             {
@@ -71,7 +76,39 @@ namespace AnimalGrid.Gameplay
             ReleaseVideo();
         }
 
-        // ---------- Optional looping video background ----------
+        // ---------- Backgrounds ----------
+
+        private void BuildBackground()
+        {
+            var go = new GameObject("Background", typeof(RectTransform), typeof(Image));
+            go.transform.SetParent(canvas.transform, false);
+            go.transform.SetAsFirstSibling();
+            var rect = go.transform as RectTransform;
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+            backgroundImage = go.GetComponent<Image>();
+            backgroundImage.raycastTarget = false;
+        }
+
+        private void SetBackground(string spriteName, Color fallback)
+        {
+            if (backgroundImage == null) return;
+            var sprite = ArtLoader.Get(spriteName);
+            if (sprite != null)
+            {
+                backgroundImage.sprite = sprite;
+                backgroundImage.color = Color.white;
+            }
+            else
+            {
+                backgroundImage.sprite = null;
+                backgroundImage.color = fallback;
+            }
+        }
+
+        // ---------- Optional looping video (only if Animated Home is ON) ----------
 
         private void BuildVideoBackground()
         {
@@ -127,32 +164,6 @@ namespace AnimalGrid.Gameplay
                 Destroy(videoRT);
                 videoRT = null;
             }
-        }
-
-        // ---------- Static background ----------
-
-        private void BuildBackground()
-        {
-            var go = new GameObject("Background", typeof(RectTransform), typeof(Image));
-            go.transform.SetParent(canvas.transform, false);
-            go.transform.SetAsFirstSibling();
-            var rect = go.transform as RectTransform;
-            rect.anchorMin = Vector2.zero;
-            rect.anchorMax = Vector2.one;
-            rect.offsetMin = Vector2.zero;
-            rect.offsetMax = Vector2.zero;
-            var img = go.GetComponent<Image>();
-            var sprite = ArtLoader.Get("background");
-            if (sprite != null)
-            {
-                img.sprite = sprite;
-                img.color = Color.white;
-            }
-            else
-            {
-                img.color = new Color(0.97f, 0.94f, 0.89f);
-            }
-            img.raycastTarget = false;
         }
 
         // ---------- Home screen ----------
@@ -242,7 +253,6 @@ namespace AnimalGrid.Gameplay
                 BuildSettingsOverlay();
             });
 
-            // Coming-soon entries (real screens arrive with your UI art)
             MakeComingSoonButton(panel.transform, "Leaderboard", new Vector2(-340f, -740f));
             MakeComingSoonButton(panel.transform, "Daily Challenge", new Vector2(0f, -740f));
             MakeComingSoonButton(panel.transform, "Store", new Vector2(340f, -740f));
@@ -465,6 +475,9 @@ namespace AnimalGrid.Gameplay
 
         private void StartLevel()
         {
+            ReleaseVideo();
+            SetBackground("background_game", GameCream);
+
             int levelNumber = overrideLevelNumber > 0 ? overrideLevelNumber : campaign.levelInWorld;
             if (overrideLevelNumber > 0)
             {

@@ -25,9 +25,10 @@ namespace AnimalGrid.Save
             set { PlayerPrefs.SetInt("vibrationOn", value ? 1 : 0); PlayerPrefs.Save(); }
         }
 
+        // Static home by default for now; flip ON in Settings to get the video back
         public static bool AnimatedHome
         {
-            get { return PlayerPrefs.GetInt("animatedHome", 1) == 1; }
+            get { return PlayerPrefs.GetInt("animatedHome", 0) == 1; }
             set { PlayerPrefs.SetInt("animatedHome", value ? 1 : 0); PlayerPrefs.Save(); }
         }
     }

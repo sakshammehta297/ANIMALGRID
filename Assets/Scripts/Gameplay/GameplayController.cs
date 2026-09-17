@@ -11,7 +11,7 @@ namespace AnimalGrid.Gameplay
 {
     /// <summary>
     /// The on-screen referee: strict correctness, lives, hints, boss intro,
-    /// tutorial with pointing ring, campaign-aware advancement, celebrations.
+    /// tutorial with pointing ring, campaign-aware advancement, celebrations, Home escape.
     /// DEBUG keys: S auto-solve | U/K/I celebration previews | P/M campaign fast-forward.
     /// </summary>
     public class GameplayController : MonoBehaviour
@@ -117,12 +117,10 @@ namespace AnimalGrid.Gameplay
 
         private void Update()
         {
-            // DEBUG: auto-solve
             if (Input.GetKeyDown(KeyCode.S) && !finished && !inputLocked)
             {
                 AutoSolve();
             }
-            // DEBUG celebration previews: U = unlock, K = world complete, I = finale
             if (Input.GetKeyDown(KeyCode.U) && !finished)
             {
                 pendingResult = new ClearResult();
@@ -142,7 +140,6 @@ namespace AnimalGrid.Gameplay
                 pendingResult = new ClearResult { worldCompleted = true, gameCompleted = true };
                 ShowFinaleOverlay();
             }
-            // DEBUG campaign fast-forward: P = +10 bar points, M = bar almost full (179)
             if (Input.GetKeyDown(KeyCode.P) && !finished)
             {
                 campaign.worldPoints[worldIndex] =
@@ -156,6 +153,29 @@ namespace AnimalGrid.Gameplay
                 CampaignSave.Save(campaign);
                 Debug.Log("DEBUG points -> 179 (win + Next to complete the world)");
             }
+        }
+
+        // ---------- Home escape ----------
+
+        private void AddHomeButton(Transform parent, Vector2 pos)
+        {
+            var go = new GameObject("HomeButton", typeof(RectTransform), typeof(Image), typeof(Button));
+            go.transform.SetParent(parent, false);
+            var rect = go.transform as RectTransform;
+            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = pos;
+            rect.sizeDelta = new Vector2(170f, 90f);
+            var img = go.GetComponent<Image>();
+            img.sprite = UiSprites.RoundedSquare;
+            img.color = new Color(0.8f, 0.75f, 0.7f, 0.95f);
+            UiFactory.MakeText(go.transform, "Home", Vector2.zero,
+                new Vector2(160f, 80f), 40, new Color(0.35f, 0.25f, 0.2f));
+            go.GetComponent<Button>().onClick.AddListener(() =>
+            {
+                SoundManager.Instance?.PlayButton();
+                GameplayBootstrap.ReturnToGame = false;
+                SceneManager.LoadScene(SceneManager.GetActiveScene().name);
+            });
         }
 
         // ---------- Tutorial ----------
@@ -266,6 +286,7 @@ namespace AnimalGrid.Gameplay
         private void BuildBossIntro()
         {
             var panel = UiFactory.MakePanel(canvas.transform, new Color(0f, 0f, 0f, 0.72f));
+            AddHomeButton(panel.transform, new Vector2(-445f, 870f));
             UiFactory.MakeText(panel.transform, "CHALLENGE LEVEL", new Vector2(0f, 300f),
                 new Vector2(950f, 160f), 84, new Color(0.95f, 0.3f, 0.3f));
             UiFactory.MakeText(panel.transform,
@@ -471,6 +492,7 @@ namespace AnimalGrid.Gameplay
             finished = true;
 
             var panel = UiFactory.MakePanel(canvas.transform, new Color(0f, 0f, 0f, 0.72f));
+            AddHomeButton(panel.transform, new Vector2(-445f, 870f));
             UiFactory.MakeText(panel.transform, "Out of Lives!", new Vector2(0f, 200f),
                 new Vector2(900f, 160f), 88, Color.white);
             UiFactory.MakeText(panel.transform, "The level restarts from the beginning.", new Vector2(0f, 60f),
@@ -491,7 +513,6 @@ namespace AnimalGrid.Gameplay
         {
             placementsDone++;
 
-            // Each box scores AT MOST ONCE per level (no remove/re-place farming)
             int key = row * puzzle.gridSize + col;
             bool firstTime = scoredCells.Add(key);
             if (!firstTime) return;
@@ -559,6 +580,7 @@ namespace AnimalGrid.Gameplay
         private void BuildCompleteOverlay()
         {
             var panel = UiFactory.MakePanel(canvas.transform, new Color(0f, 0f, 0f, 0.72f));
+            AddHomeButton(panel.transform, new Vector2(-445f, 870f));
 
             string title = isBoss ? "CHALLENGE CLEARED!" : "Level Complete!";
             UiFactory.MakeText(panel.transform, title, new Vector2(0f, 430f),
@@ -822,12 +844,14 @@ namespace AnimalGrid.Gameplay
 
         private void BuildHud()
         {
+            AddHomeButton(canvas.transform, new Vector2(-445f, 870f));
+
             var levelGo = new GameObject("LevelText", typeof(RectTransform), typeof(Text));
             levelGo.transform.SetParent(canvas.transform, false);
             var lRect = levelGo.transform as RectTransform;
             lRect.anchorMin = new Vector2(0.5f, 1f);
             lRect.anchorMax = new Vector2(0.5f, 1f);
-            lRect.anchoredPosition = new Vector2(-260f, -90f);
+            lRect.anchoredPosition = new Vector2(-140f, -90f);
             lRect.sizeDelta = new Vector2(420f, 110f);
             var levelText = levelGo.GetComponent<Text>();
             levelText.font = UiFonts.Default;
@@ -844,7 +868,7 @@ namespace AnimalGrid.Gameplay
             var sRect = scoreGo.transform as RectTransform;
             sRect.anchorMin = new Vector2(0.5f, 1f);
             sRect.anchorMax = new Vector2(0.5f, 1f);
-            sRect.anchoredPosition = new Vector2(180f, -90f);
+            sRect.anchoredPosition = new Vector2(300f, -90f);
             sRect.sizeDelta = new Vector2(460f, 110f);
             scoreText = scoreGo.GetComponent<Text>();
             scoreText.font = UiFonts.Default;
@@ -854,7 +878,6 @@ namespace AnimalGrid.Gameplay
             scoreText.text = "Score 0";
             scoreText.raycastTarget = false;
 
-            // Unlock progress bar (HUD)
             int pts = campaign.worldPoints[worldIndex];
             int unlockedCount = UnlockProgression.UnlockedCount(pts);
             var barWorld = Worlds.Get(worldIndex);
