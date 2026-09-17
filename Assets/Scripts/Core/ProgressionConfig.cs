@@ -2,7 +2,7 @@ namespace AnimalGrid.Core
 {
     public struct LevelConfig
     {
-        public int levelNumber;
+        public int levelNumber;   // level inside the current world
         public bool isBoss;
         public int gridSize;
         public int difficultyTarget;
@@ -10,38 +10,41 @@ namespace AnimalGrid.Core
     }
 
     /// <summary>
-    /// Data-driven progression curve (spec 8). Tunable tables - not hard-coded in gameplay code.
+    /// Data-driven size curve per world (spec 8). Grid cap = 10x10.
     /// Pure C# - no Unity dependencies!
     /// </summary>
     public static class ProgressionConfig
     {
+        // [upToLevelInWorld, gridSize]
         private static readonly int[][] NormalCurve =
         {
             new[] { 12, 5 },
-            new[] { 25, 6 },
-            new[] { 45, 6 },
-            new[] { 65, 7 },
-            new[] { 85, 8 },
-            new[] { int.MaxValue, 9 }
+            new[] { 30, 6 },
+            new[] { 60, 7 },
+            new[] { 100, 8 },
+            new[] { 140, 9 },
+            new[] { int.MaxValue, 10 }
         };
 
-        public const int MaxGridSize = 12;
+        public const int MaxGridSize = 10;
+        public const int MaxLevelInWorld = 180;
 
-        public static bool IsBoss(int levelNumber)
+        public static bool IsBoss(int levelInWorld)
         {
-            return levelNumber % 10 == 0;
+            return levelInWorld % 10 == 0;
         }
 
-        public static LevelConfig GetLevel(int levelNumber)
+        public static LevelConfig GetLevel(int levelInWorld)
         {
-            if (levelNumber < 1) levelNumber = 1;
-            bool boss = IsBoss(levelNumber);
-            int size = boss ? BossSize(levelNumber) : NormalSize(levelNumber);
+            if (levelInWorld < 1) levelInWorld = 1;
+            if (levelInWorld > MaxLevelInWorld) levelInWorld = MaxLevelInWorld;
+            bool boss = IsBoss(levelInWorld);
+            int size = boss ? BossSize(levelInWorld) : NormalSize(levelInWorld);
             if (size > MaxGridSize) size = MaxGridSize;
             if (size < 5) size = 5;
 
             var config = new LevelConfig();
-            config.levelNumber = levelNumber;
+            config.levelNumber = levelInWorld;
             config.isBoss = boss;
             config.gridSize = size;
             config.difficultyTarget = System.Math.Min(10, System.Math.Max(1, size - 3));
@@ -49,18 +52,18 @@ namespace AnimalGrid.Core
             return config;
         }
 
-        private static int NormalSize(int levelNumber)
+        private static int NormalSize(int levelInWorld)
         {
             foreach (var band in NormalCurve)
             {
-                if (levelNumber <= band[0]) return band[1];
+                if (levelInWorld <= band[0]) return band[1];
             }
-            return 9;
+            return 10;
         }
 
-        private static int BossSize(int levelNumber)
+        private static int BossSize(int levelInWorld)
         {
-            return 5 + levelNumber / 10;
+            return System.Math.Min(MaxGridSize, 5 + levelInWorld / 10);
         }
     }
 }
