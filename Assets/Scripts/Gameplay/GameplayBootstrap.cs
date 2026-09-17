@@ -64,11 +64,12 @@ namespace AnimalGrid.Gameplay
                 ReturnToGame = false;
                 StartLevel();
             }
-            else
-            {
-                BuildVideoBackground();
-                BuildHomeOverlay();
-            }
+                            else
+                {
+                    BuildVideoBackground();
+                    BuildHomeOverlay();
+                }
+                SoundManager.Instance?.PlayMusic("home");
         }
 
         private void OnDestroy()
@@ -486,6 +487,7 @@ namespace AnimalGrid.Gameplay
             }
             Debug.Log("START -> World " + (campaign.worldIndex + 1) + " Level " + levelNumber);
             LevelConfig config = ProgressionConfig.GetLevel(levelNumber);
+            SoundManager.Instance?.PlayMusic(config.isBoss ? "boss" : "game");
             var world = Worlds.Get(campaign.worldIndex);
 
             int unlockedCount = campaign.UnlockedInWorld(campaign.worldIndex);

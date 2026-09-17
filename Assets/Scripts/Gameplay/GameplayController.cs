@@ -11,7 +11,8 @@ namespace AnimalGrid.Gameplay
 {
     /// <summary>
     /// The on-screen referee: strict correctness, lives, hints, boss intro,
-    /// tutorial with pointing ring, campaign-aware advancement, celebrations, Home escape.
+    /// tutorial with pointing ring, campaign-aware advancement, celebrations,
+    /// Home escape, and full audio hooks.
     /// DEBUG keys: S auto-solve | U/K/I celebration previews | P/M campaign fast-forward.
     /// </summary>
     public class GameplayController : MonoBehaviour
@@ -117,10 +118,12 @@ namespace AnimalGrid.Gameplay
 
         private void Update()
         {
+            // DEBUG: auto-solve
             if (Input.GetKeyDown(KeyCode.S) && !finished && !inputLocked)
             {
                 AutoSolve();
             }
+            // DEBUG celebration previews: U = unlock, K = world complete, I = finale
             if (Input.GetKeyDown(KeyCode.U) && !finished)
             {
                 pendingResult = new ClearResult();
@@ -140,6 +143,7 @@ namespace AnimalGrid.Gameplay
                 pendingResult = new ClearResult { worldCompleted = true, gameCompleted = true };
                 ShowFinaleOverlay();
             }
+            // DEBUG campaign fast-forward: P = +10 bar points, M = bar almost full (179)
             if (Input.GetKeyDown(KeyCode.P) && !finished)
             {
                 campaign.worldPoints[worldIndex] =
@@ -395,6 +399,7 @@ namespace AnimalGrid.Gameplay
                 if (!tutorialActive)
                 {
                     lives--;
+                    SoundManager.Instance?.PlayHeart();
                     UpdateHearts();
                 }
 
@@ -513,6 +518,7 @@ namespace AnimalGrid.Gameplay
         {
             placementsDone++;
 
+            // Each box scores AT MOST ONCE per level (no remove/re-place farming)
             int key = row * puzzle.gridSize + col;
             bool firstTime = scoredCells.Add(key);
             if (!firstTime) return;
@@ -527,6 +533,7 @@ namespace AnimalGrid.Gameplay
                 bool hasSprite = tokenImage.sprite != null && tokenImage.sprite != UiSprites.Circle;
                 tokenImage.color = hasSprite ? Color.white : BaseColor(colorId);
             }
+            SoundManager.Instance?.PlayTray();
 
             var view = board.GetCellView(row, col);
             StartCoroutine(FloatText(view.transform, "+" + points,
@@ -650,6 +657,7 @@ namespace AnimalGrid.Gameplay
             var world = Worlds.Get(worldIndex);
             string id = world.animalIds[animalIndex];
             var panel = UiFactory.MakePanel(canvas.transform, new Color(0f, 0f, 0f, 0.78f));
+            SoundManager.Instance?.PlayUnlock();
 
             UiFactory.MakeText(panel.transform, "New pet unlocked!", new Vector2(0f, 430f),
                 new Vector2(900f, 140f), 80, new Color(1f, 0.85f, 0.2f));
@@ -689,6 +697,8 @@ namespace AnimalGrid.Gameplay
             var next = Worlds.Get(pendingResult != null ? pendingResult.nextWorld : worldIndex);
 
             var panel = UiFactory.MakePanel(canvas.transform, new Color(0f, 0f, 0f, 0.8f));
+            SoundManager.Instance?.PlaySting("world");
+
             UiFactory.MakeText(panel.transform, "WORLD COMPLETE!", new Vector2(0f, 380f),
                 new Vector2(950f, 150f), 84, new Color(1f, 0.85f, 0.2f));
             UiFactory.MakeText(panel.transform, done.name + " - all 10 animals discovered!",
@@ -708,6 +718,8 @@ namespace AnimalGrid.Gameplay
         private void ShowFinaleOverlay()
         {
             var panel = UiFactory.MakePanel(canvas.transform, new Color(0f, 0f, 0f, 0.85f));
+            SoundManager.Instance?.PlaySting("world");
+
             UiFactory.MakeText(panel.transform, "YOU DID IT!", new Vector2(0f, 420f),
                 new Vector2(950f, 160f), 90, new Color(1f, 0.85f, 0.2f));
             UiFactory.MakeText(panel.transform, "All 3 worlds complete - 30 animals collected!",
@@ -878,6 +890,7 @@ namespace AnimalGrid.Gameplay
             scoreText.text = "Score 0";
             scoreText.raycastTarget = false;
 
+            // Unlock progress bar (HUD)
             int pts = campaign.worldPoints[worldIndex];
             int unlockedCount = UnlockProgression.UnlockedCount(pts);
             var barWorld = Worlds.Get(worldIndex);
