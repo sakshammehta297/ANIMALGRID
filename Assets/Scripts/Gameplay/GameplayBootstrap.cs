@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -10,7 +11,7 @@ using AnimalGrid.Save;
 namespace AnimalGrid.Gameplay
 {
     /// <summary>
-    /// Entry point: campaign-driven home + collection + settings + level start.
+    /// Entry point: campaign-driven home + collection + settings + coming-soon entries + level start.
     /// </summary>
     public class GameplayBootstrap : MonoBehaviour
     {
@@ -241,7 +242,12 @@ namespace AnimalGrid.Gameplay
                 BuildSettingsOverlay();
             });
 
-            var reset = UiFactory.MakeButton(panel.transform, "Reset Progress", new Vector2(0f, -820f),
+            // Coming-soon entries (real screens arrive with your UI art)
+            MakeComingSoonButton(panel.transform, "Leaderboard", new Vector2(-340f, -740f));
+            MakeComingSoonButton(panel.transform, "Daily Challenge", new Vector2(0f, -740f));
+            MakeComingSoonButton(panel.transform, "Store", new Vector2(340f, -740f));
+
+            var reset = UiFactory.MakeButton(panel.transform, "Reset Progress", new Vector2(0f, -880f),
                 new Vector2(380f, 90f), new Color(0.8f, 0.75f, 0.7f), new Color(0.35f, 0.25f, 0.2f));
             reset.onClick.AddListener(() =>
             {
@@ -251,6 +257,34 @@ namespace AnimalGrid.Gameplay
                 ReturnToGame = false;
                 SceneManager.LoadScene(SceneManager.GetActiveScene().name);
             });
+        }
+
+        private void MakeComingSoonButton(Transform parent, string label, Vector2 pos)
+        {
+            var btn = UiFactory.MakeButton(parent, label, pos,
+                new Vector2(300f, 100f), new Color(0.8f, 0.75f, 0.7f), new Color(0.35f, 0.25f, 0.2f));
+            btn.onClick.AddListener(() =>
+            {
+                SoundManager.Instance?.PlayButton();
+                ShowComingSoon(label);
+            });
+
+            UiFactory.MakeText(parent, "soon", pos + new Vector2(115f, 62f),
+                new Vector2(90f, 40f), 26, new Color(0.95f, 0.55f, 0.15f));
+        }
+
+        private void ShowComingSoon(string feature)
+        {
+            var panel = UiFactory.MakePanel(canvas.transform, new Color(0f, 0f, 0f, 0.55f));
+            UiFactory.MakeText(panel.transform, feature + "\nComing Soon!", new Vector2(0f, 0f),
+                new Vector2(800f, 260f), 64, Color.white);
+            StartCoroutine(CloseAfter(panel, 1.6f));
+        }
+
+        private IEnumerator CloseAfter(GameObject go, float delay)
+        {
+            yield return new WaitForSeconds(delay);
+            if (go != null) Destroy(go);
         }
 
         // ---------- Settings screen ----------
