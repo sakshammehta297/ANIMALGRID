@@ -1,9 +1,11 @@
 using UnityEngine;
+using AnimalGrid.Save;
 
 namespace AnimalGrid.Audio
 {
     /// <summary>
-    /// Plays the synthesized SFX. Independent SFX volume (spec 31).
+    /// Plays synthesized SFX + optional music loop (Assets/Resources/Audio/music_home).
+    /// Respects SettingsSave toggles. Vibration fires on invalid placement (mobile only).
     /// </summary>
     public class SoundManager : MonoBehaviour
     {
@@ -11,6 +13,9 @@ namespace AnimalGrid.Audio
         public static float SfxVolume = 1f;
 
         private AudioSource source;
+        private AudioSource musicSource;
+        private AudioClip musicClip;
+
         private AudioClip clipTap, clipButton, clipX, clipPlace, clipInvalid, clipHint, clipWin, clipBossWin;
 
         private void Awake()
@@ -18,6 +23,10 @@ namespace AnimalGrid.Audio
             Instance = this;
             source = GetComponent<AudioSource>();
             if (source == null) source = gameObject.AddComponent<AudioSource>();
+
+            musicSource = gameObject.AddComponent<AudioSource>();
+            musicSource.loop = true;
+            musicClip = Resources.Load<AudioClip>("Audio/music_home");
 
             clipTap = AudioKit.Blip(660f, 0.06f);
             clipButton = AudioKit.Blip(880f, 0.05f);
@@ -27,6 +36,31 @@ namespace AnimalGrid.Audio
             clipHint = AudioKit.Blip(990f, 0.10f);
             clipWin = AudioKit.Arpeggio(new float[] { 523f, 659f, 784f, 1046f }, 0.14f);
             clipBossWin = AudioKit.Arpeggio(new float[] { 523f, 659f, 784f, 1046f, 1318f, 1568f }, 0.13f);
+
+            ApplySettings();
+        }
+
+        /// <summary>Re-reads SettingsSave: SFX volume + music play/stop.</summary>
+        public static void ApplySettings()
+        {
+            SfxVolume = SettingsSave.SfxOn ? 1f : 0f;
+            if (Instance != null) Instance.RefreshMusic();
+        }
+
+        private void RefreshMusic()
+        {
+            if (musicSource == null) return;
+            bool want = SettingsSave.MusicOn && musicClip != null;
+            if (want && !musicSource.isPlaying)
+            {
+                musicSource.clip = musicClip;
+                musicSource.volume = 0.35f;
+                musicSource.Play();
+            }
+            else if (!want && musicSource.isPlaying)
+            {
+                musicSource.Stop();
+            }
         }
 
         private void Play(AudioClip clip)
@@ -39,7 +73,16 @@ namespace AnimalGrid.Audio
         public void PlayButton() { Play(clipButton); }
         public void PlayX() { Play(clipX); }
         public void PlayPlace() { Play(clipPlace); }
-        public void PlayInvalid() { Play(clipInvalid); }
+
+        public void PlayInvalid()
+        {
+            Play(clipInvalid);
+            if (SettingsSave.VibrationOn && Application.isMobilePlatform)
+            {
+                Handheld.Vibrate();
+            }
+        }
+
         public void PlayHint() { Play(clipHint); }
         public void PlayWin() { Play(clipWin); }
         public void PlayBossWin() { Play(clipBossWin); }

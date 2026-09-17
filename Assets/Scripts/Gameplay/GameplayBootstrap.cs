@@ -10,7 +10,7 @@ using AnimalGrid.Save;
 namespace AnimalGrid.Gameplay
 {
     /// <summary>
-    /// Entry point: campaign-driven home + collection + level start.
+    /// Entry point: campaign-driven home + collection + settings + level start.
     /// </summary>
     public class GameplayBootstrap : MonoBehaviour
     {
@@ -47,6 +47,7 @@ namespace AnimalGrid.Gameplay
 
             var soundGo = new GameObject("SoundManager");
             soundGo.AddComponent<SoundManager>();
+            SoundManager.ApplySettings();
 
             campaign = CampaignSave.Load();
 
@@ -73,7 +74,7 @@ namespace AnimalGrid.Gameplay
 
         private void BuildVideoBackground()
         {
-            if (homeVideo == null) return;
+            if (homeVideo == null || !SettingsSave.AnimatedHome) return;
 
             videoRT = new RenderTexture(720, 1280, 0, RenderTextureFormat.ARGB32);
 
@@ -224,12 +225,20 @@ namespace AnimalGrid.Gameplay
                     new Vector2(0f, -400f), fraction, barLabel, new Color(0.5f, 0.4f, 0.32f));
             }
 
-            var collectionBtn = UiFactory.MakeButton(panel.transform, "Collection", new Vector2(0f, -580f),
+            var collectionBtn = UiFactory.MakeButton(panel.transform, "Collection", new Vector2(-230f, -600f),
                 new Vector2(420f, 110f), new Color(0.87f, 0.78f, 0.62f), new Color(0.3f, 0.2f, 0.1f));
             collectionBtn.onClick.AddListener(() =>
             {
                 SoundManager.Instance?.PlayButton();
                 BuildCollectionOverlay();
+            });
+
+            var settingsBtn = UiFactory.MakeButton(panel.transform, "Settings", new Vector2(230f, -600f),
+                new Vector2(420f, 110f), new Color(0.87f, 0.78f, 0.62f), new Color(0.3f, 0.2f, 0.1f));
+            settingsBtn.onClick.AddListener(() =>
+            {
+                SoundManager.Instance?.PlayButton();
+                BuildSettingsOverlay();
             });
 
             var reset = UiFactory.MakeButton(panel.transform, "Reset Progress", new Vector2(0f, -820f),
@@ -244,7 +253,98 @@ namespace AnimalGrid.Gameplay
             });
         }
 
-        // ---------- Collection screen (trophy room) ----------
+        // ---------- Settings screen ----------
+
+        private void BuildSettingsOverlay()
+        {
+            var panel = UiFactory.MakePanel(canvas.transform, new Color(0.97f, 0.94f, 0.89f, 1f));
+
+            UiFactory.MakeText(panel.transform, "Settings", new Vector2(0f, 700f),
+                new Vector2(700f, 140f), 84, new Color(0.35f, 0.22f, 0.15f));
+
+            var back = UiFactory.MakeButton(panel.transform, "Back", new Vector2(-400f, 710f),
+                new Vector2(220f, 90f), new Color(0.8f, 0.75f, 0.7f), new Color(0.35f, 0.25f, 0.2f));
+            back.onClick.AddListener(() =>
+            {
+                SoundManager.Instance?.PlayButton();
+                Destroy(panel);
+            });
+
+            MakeToggleRow(panel.transform, "Sound Effects", 380f,
+                () => SettingsSave.SfxOn,
+                v => { SettingsSave.SfxOn = v; SoundManager.ApplySettings(); });
+
+            MakeToggleRow(panel.transform, "Music", 200f,
+                () => SettingsSave.MusicOn,
+                v => { SettingsSave.MusicOn = v; SoundManager.ApplySettings(); });
+
+            MakeToggleRow(panel.transform, "Vibration", 20f,
+                () => SettingsSave.VibrationOn,
+                v => { SettingsSave.VibrationOn = v; });
+
+            MakeToggleRow(panel.transform, "Animated Home", -160f,
+                () => SettingsSave.AnimatedHome,
+                v => { SettingsSave.AnimatedHome = v; });
+
+            UiFactory.MakeText(panel.transform,
+                "Music plays when a music_home clip exists in Resources/Audio.\nAnimated Home applies the next time Home opens.",
+                new Vector2(0f, -420f), new Vector2(900f, 140f), 34, new Color(0.55f, 0.45f, 0.35f));
+        }
+
+        private void MakeToggleRow(Transform parent, string label, float y,
+            System.Func<bool> get, System.Action<bool> set)
+        {
+            var root = new GameObject("Row_" + label, typeof(RectTransform));
+            root.transform.SetParent(parent, false);
+            var rect = root.transform as RectTransform;
+            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = new Vector2(0f, y);
+            rect.sizeDelta = new Vector2(700f, 110f);
+
+            UiFactory.MakeText(root.transform, label, new Vector2(-140f, 0f),
+                new Vector2(400f, 90f), 44, new Color(0.35f, 0.22f, 0.15f));
+
+            var btnGo = new GameObject("Toggle", typeof(RectTransform), typeof(Image), typeof(Button));
+            btnGo.transform.SetParent(root.transform, false);
+            var bRect = btnGo.transform as RectTransform;
+            bRect.anchorMin = bRect.anchorMax = new Vector2(1f, 0.5f);
+            bRect.anchoredPosition = new Vector2(-90f, 0f);
+            bRect.sizeDelta = new Vector2(160f, 80f);
+            var bg = btnGo.GetComponent<Image>();
+            bg.sprite = UiSprites.RoundedSquare;
+
+            var knobGo = new GameObject("Knob", typeof(RectTransform), typeof(Image));
+            knobGo.transform.SetParent(btnGo.transform, false);
+            var kRect = knobGo.transform as RectTransform;
+            kRect.anchorMin = kRect.anchorMax = new Vector2(0.5f, 0.5f);
+            kRect.sizeDelta = new Vector2(64f, 64f);
+            var knob = knobGo.GetComponent<Image>();
+            knob.sprite = UiSprites.Circle;
+            knob.color = Color.white;
+            knob.raycastTarget = false;
+
+            var onOff = UiFactory.MakeText(root.transform, "", new Vector2(250f, 0f),
+                new Vector2(140f, 80f), 40, new Color(0.5f, 0.4f, 0.32f));
+
+            System.Action refresh = null;
+            refresh = () =>
+            {
+                bool on = get();
+                bg.color = on ? new Color(0.45f, 0.75f, 0.35f) : new Color(0.6f, 0.6f, 0.6f, 0.6f);
+                kRect.anchoredPosition = new Vector2(on ? 40f : -40f, 0f);
+                onOff.text = on ? "ON" : "OFF";
+            };
+            refresh();
+
+            btnGo.GetComponent<Button>().onClick.AddListener(() =>
+            {
+                set(!get());
+                refresh();
+                SoundManager.Instance?.PlayButton();
+            });
+        }
+
+        // ---------- Collection screen ----------
 
         private void BuildCollectionOverlay()
         {
