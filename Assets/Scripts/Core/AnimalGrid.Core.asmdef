@@ -1,6 +1,8 @@
 {
     "name": "AnimalGrid.Core",
-    "references": [],
+    "references": [
+        "AnimalGrid.ScriptableObjects"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
@@ -9,5 +11,5 @@
     "autoReferenced": true,
     "defineConstraints": [],
     "versionDefines": [],
-    "noEngineReferences": true
+    "noEngineReferences": false
 }
