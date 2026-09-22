@@ -62,6 +62,13 @@ namespace AnimalGrid.Core
         public List<AnimalDefinition> animals;
         public List<SolutionPosition> solution;
         public List<string> cellColors; // Row-major color layout: index = row * gridSize + column
+        
+        /// <summary>
+        /// Generation metrics for debugging and analytics.
+        /// </summary>
+        public int generationAttempts;
+        public int repairIterations;
+        public int randomSeed;
 
         public PuzzleDefinition()
         {
@@ -69,6 +76,9 @@ namespace AnimalGrid.Core
             animals = new List<AnimalDefinition>();
             solution = new List<SolutionPosition>();
             cellColors = new List<string>();
+            generationAttempts = 0;
+            repairIterations = 0;
+            randomSeed = 0;
         }
 
         /// <summary>
@@ -76,19 +86,66 @@ namespace AnimalGrid.Core
         /// </summary>
         public string GetCellColor(int row, int column)
         {
+            if (row < 0 || row >= gridSize || column < 0 || column >= gridSize)
+            {
+                Debug.LogWarning($"[PuzzleDefinition] GetCellColor called with invalid coordinates: ({row}, {column})");
+                return null;
+            }
             return cellColors[row * gridSize + column];
         }
 
         /// <summary>
         /// A quick check to make sure the puzzle data makes sense.
+        /// Now includes more thorough validation.
         /// </summary>
         public bool IsValid()
         {
-            if (gridSize < 5) return false;
-            if (colors.Count != gridSize) return false;
-            if (animals.Count != gridSize) return false;
-            if (solution.Count != gridSize) return false;
-            if (cellColors.Count != gridSize * gridSize) return false;
+            if (gridSize < 3) // Allow smaller grids for testing
+            {
+                Debug.LogWarning($"[PuzzleDefinition] Grid size {gridSize} is too small (min: 3)");
+                return false;
+            }
+            if (colors.Count != gridSize)
+            {
+                Debug.LogWarning($"[PuzzleDefinition] Colors count ({colors.Count}) doesn't match grid size ({gridSize})");
+                return false;
+            }
+            if (animals.Count != gridSize)
+            {
+                Debug.LogWarning($"[PuzzleDefinition] Animals count ({animals.Count}) doesn't match grid size ({gridSize})");
+                return false;
+            }
+            if (solution.Count != gridSize)
+            {
+                Debug.LogWarning($"[PuzzleDefinition] Solution count ({solution.Count}) doesn't match grid size ({gridSize})");
+                return false;
+            }
+            if (cellColors.Count != gridSize * gridSize)
+            {
+                Debug.LogWarning($"[PuzzleDefinition] Cell colors count ({cellColors.Count}) doesn't match expected ({gridSize * gridSize})");
+                return false;
+            }
+            
+            // Validate no empty colors
+            foreach (var color in cellColors)
+            {
+                if (string.IsNullOrEmpty(color))
+                {
+                    Debug.LogWarning("[PuzzleDefinition] Found empty color in cellColors");
+                    return false;
+                }
+            }
+            
+            // Validate solution positions are within bounds
+            foreach (var pos in solution)
+            {
+                if (pos.row < 0 || pos.row >= gridSize || pos.column < 0 || pos.column >= gridSize)
+                {
+                    Debug.LogWarning($"[PuzzleDefinition] Solution position out of bounds: ({pos.row}, {pos.column})");
+                    return false;
+                }
+            }
+            
             return true;
         }
     }

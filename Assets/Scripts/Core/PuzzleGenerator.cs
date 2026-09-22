@@ -4,6 +4,7 @@ namespace AnimalGrid.Core
 {
     /// <summary>
     /// Settings that control puzzle generation.
+    /// Now supports both direct values and ScriptableObject references.
     /// </summary>
     public class GenerationSettings
     {
@@ -16,6 +17,28 @@ namespace AnimalGrid.Core
         public int maxRepairs = 100;
         public List<string> colors = null;      // optional palette
         public List<string> animalIds = null;   // optional animal ids
+        
+        /// <summary>
+        /// Optional reference to difficulty config ScriptableObject.
+        /// If provided, overrides maxAttempts and maxRepairs.
+        /// </summary>
+        public DifficultyConfigSO difficultyConfig = null;
+        
+        /// <summary>
+        /// Apply settings from DifficultyConfigSO if available.
+        /// </summary>
+        public void ApplyDifficultyConfig()
+        {
+            if (difficultyConfig != null)
+            {
+                maxAttempts = difficultyConfig.maxGenerationAttempts;
+                maxRepairs = difficultyConfig.maxRepairIterations;
+                if (gridSize == 0) // Only override if not explicitly set
+                {
+                    gridSize = difficultyConfig.GetGridSizeForLevel(levelId, isBoss);
+                }
+            }
+        }
     }
 
     public interface IPuzzleGenerator
@@ -35,6 +58,9 @@ namespace AnimalGrid.Core
 
         public PuzzleDefinition Generate(GenerationSettings settings)
         {
+            // Apply difficulty config if provided
+            settings.ApplyDifficultyConfig();
+            
             random = settings.randomSeed != 0
                 ? new System.Random(settings.randomSeed)
                 : new System.Random();
