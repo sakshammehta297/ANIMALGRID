@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -6,6 +7,10 @@ namespace AnimalGrid.Gameplay
     /// <summary>
     /// The visual representation of one board cell: rounded tile,
     /// white rounded X bars, and animal sticker (or fallback circle).
+    /// Animations here are plain coroutines (no external tween package needed):
+    /// a staggered pop-in when the board loads, a punchy pop when an animal or
+    /// X is placed, a quick shrink when one is removed, and a celebratory
+    /// bounce (PlayWinBounce) used on solved cells when a level completes.
     /// </summary>
     public class CellView : MonoBehaviour
     {
@@ -15,18 +20,23 @@ namespace AnimalGrid.Gameplay
 
         private GameObject xRoot;
         private GameObject animalRoot;
+        private RectTransform cellRect;
 
         public void Setup(int row, int column, float size, Color regionColor)
         {
             this.row = row;
             this.column = column;
 
-            var rect = GetComponent<RectTransform>();
-            rect.sizeDelta = new Vector2(size, size);
+            cellRect = GetComponent<RectTransform>();
+            cellRect.sizeDelta = new Vector2(size, size);
 
             if (background == null) background = GetComponent<Image>();
             background.sprite = UiSprites.RoundedSquare;
             background.color = regionColor;
+
+            // Staggered pop-in as the board loads, sweeping diagonally across the grid.
+            float delay = (row + column) * 0.025f;
+            StartCoroutine(PopIn(cellRect, delay, 0.3f));
         }
 
         public void SetRegionColor(Color color)
@@ -40,10 +50,22 @@ namespace AnimalGrid.Gameplay
             {
                 xRoot = new GameObject("XMark", typeof(RectTransform));
                 xRoot.transform.SetParent(transform, false);
+                xRoot.SetActive(false); // so the "was it hidden before?" check below fires on first creation too
                 MakeBar(45f);
                 MakeBar(-45f);
             }
-            if (xRoot != null) xRoot.SetActive(visible);
+            if (xRoot == null) return;
+
+            if (visible)
+            {
+                bool wasHidden = !xRoot.activeSelf;
+                xRoot.SetActive(true);
+                if (wasHidden) StartCoroutine(PopIn(xRoot.transform as RectTransform, 0f, 0.16f));
+            }
+            else if (xRoot.activeSelf)
+            {
+                StartCoroutine(ShrinkOutThenDeactivate(xRoot, 0.1f));
+            }
         }
 
         private void MakeBar(float angle)
@@ -66,32 +88,98 @@ namespace AnimalGrid.Gameplay
             {
                 animalRoot = new GameObject("Animal", typeof(RectTransform), typeof(Image));
                 animalRoot.transform.SetParent(transform, false);
+                animalRoot.SetActive(false); // so the "was it hidden before?" check below fires on first creation too
                 var rect = animalRoot.transform as RectTransform;
                 float parentSize = (transform as RectTransform).sizeDelta.x;
                 rect.sizeDelta = new Vector2(parentSize * 0.92f, parentSize * 0.92f);
                 animalRoot.GetComponent<Image>().raycastTarget = false;
             }
 
-            if (animalRoot != null)
+            if (animalRoot == null) return;
+
+            if (visible)
             {
-                animalRoot.SetActive(visible);
-                if (visible)
+                var img = animalRoot.GetComponent<Image>();
+                var board = GetComponentInParent<BoardView>();
+                var sprite = board != null ? board.AnimalSpriteForCell(row, column) : null;
+                if (sprite != null)
                 {
-                    var img = animalRoot.GetComponent<Image>();
-                    var board = GetComponentInParent<BoardView>();
-                    var sprite = board != null ? board.AnimalSpriteForCell(row, column) : null;
-                    if (sprite != null)
-                    {
-                        img.sprite = sprite;
-                        img.color = Color.white;
-                    }
-                    else
-                    {
-                        img.sprite = UiSprites.Circle;
-                        img.color = fallbackColor;
-                    }
+                    img.sprite = sprite;
+                    img.color = Color.white;
                 }
+                else
+                {
+                    img.sprite = UiSprites.Circle;
+                    img.color = fallbackColor;
+                }
+
+                bool wasHidden = !animalRoot.activeSelf;
+                animalRoot.SetActive(true);
+                if (wasHidden) StartCoroutine(PopIn(animalRoot.transform as RectTransform, 0f, 0.22f));
             }
+            else if (animalRoot.activeSelf)
+            {
+                StartCoroutine(ShrinkOutThenDeactivate(animalRoot, 0.12f));
+            }
+        }
+
+        /// <summary>
+        /// Small celebratory bounce for a solved cell's animal (falls back to
+        /// the whole tile if no animal is showing). Scales up and settles back
+        /// down without disappearing, unlike PopIn — call with a small
+        /// per-cell `delay` from the caller to sweep across the solved cells.
+        /// </summary>
+        public void PlayWinBounce(float delay = 0f)
+        {
+            var target = animalRoot != null ? (RectTransform)animalRoot.transform : cellRect;
+            StartCoroutine(Bounce(target, delay));
+        }
+
+        // ---------- Shared coroutine animations ----------
+
+        private static IEnumerator PopIn(RectTransform target, float delay, float duration)
+        {
+            target.localScale = Vector3.zero;
+            if (delay > 0f) yield return new WaitForSeconds(delay);
+            float t = 0f;
+            while (t < duration)
+            {
+                t += Time.deltaTime;
+                float k = Ease.OutBack(Mathf.Clamp01(t / duration));
+                target.localScale = Vector3.one * Mathf.Max(k, 0f);
+                yield return null;
+            }
+            target.localScale = Vector3.one;
+        }
+
+        private static IEnumerator ShrinkOutThenDeactivate(GameObject go, float duration)
+        {
+            var target = go.transform as RectTransform;
+            Vector3 start = target.localScale;
+            float t = 0f;
+            while (t < duration)
+            {
+                t += Time.deltaTime;
+                target.localScale = Vector3.Lerp(start, Vector3.zero, t / duration);
+                yield return null;
+            }
+            target.localScale = Vector3.zero;
+            go.SetActive(false);
+        }
+
+        private static IEnumerator Bounce(RectTransform target, float delay, float duration = 0.32f, float peak = 1.25f)
+        {
+            if (delay > 0f) yield return new WaitForSeconds(delay);
+            float t = 0f;
+            while (t < duration)
+            {
+                t += Time.deltaTime;
+                float p = t / duration;
+                float k = Mathf.Sin(p * Mathf.PI); // rises then settles — one clean bounce
+                target.localScale = Vector3.one * (1f + (peak - 1f) * Mathf.Max(k, 0f));
+                yield return null;
+            }
+            target.localScale = Vector3.one;
         }
     }
 }

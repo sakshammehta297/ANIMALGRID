@@ -174,8 +174,12 @@ namespace AnimalGrid.Gameplay
             var panel = UiFactory.MakePanel(canvas.transform, new Color(0f, 0f, 0f, 0f));
             panel.GetComponent<Image>().raycastTarget = false;
 
-            UiFactory.MakeText(panel.transform, "ANIMAL GRID", new Vector2(0f, 620f),
-                new Vector2(950f, 200f), 100, new Color(0.35f, 0.22f, 0.15f));
+            var logo = UiFactory.MakeArtImage(panel.transform, "logo", new Vector2(0f, 620f), new Vector2(950f, 260f));
+            if (logo == null)
+            {
+                UiFactory.MakeText(panel.transform, "ANIMAL GRID", new Vector2(0f, 620f),
+                    new Vector2(950f, 200f), 100, new Color(0.35f, 0.22f, 0.15f));
+            }
 
             if (campaign.gameCompleted)
             {
@@ -211,7 +215,7 @@ namespace AnimalGrid.Gameplay
                     : "Continue - Level " + campaign.levelInWorld;
 
                 var continueBtn = UiFactory.MakeButton(panel.transform, label, new Vector2(0f, -220f),
-                    new Vector2(640f, 150f), new Color(0.45f, 0.75f, 0.35f), Color.white);
+                    new Vector2(640f, 150f), new Color(0.45f, 0.75f, 0.35f), Color.white, artKey: "button_gold");
                 continueBtn.onClick.AddListener(() =>
                 {
                     SoundManager.Instance?.PlayButton();
@@ -238,25 +242,40 @@ namespace AnimalGrid.Gameplay
                     new Vector2(0f, -400f), fraction, barLabel, new Color(0.5f, 0.4f, 0.32f));
             }
 
-            var collectionBtn = UiFactory.MakeButton(panel.transform, "Collection", new Vector2(-230f, -600f),
-                new Vector2(420f, 110f), new Color(0.87f, 0.78f, 0.62f), new Color(0.3f, 0.2f, 0.1f));
+            // Icon-on-top tiles (see UiFactory.MakeIconButton): each looks for
+            // Resources/Art/Icons/icon_<key>.png and falls back to a text-only
+            // tile automatically if that art doesn't exist yet, so this row is
+            // safe to ship today and will pick up icons with zero code changes
+            // as art lands. "shop" already resolves (see project README).
+            var collectionBtn = UiFactory.MakeIconButton(panel.transform, "collection", "Collection",
+                new Vector2(-230f, -600f), new Vector2(420f, 130f),
+                new Color(0.87f, 0.78f, 0.62f), new Color(0.3f, 0.2f, 0.1f));
             collectionBtn.onClick.AddListener(() =>
             {
                 SoundManager.Instance?.PlayButton();
                 BuildCollectionOverlay();
             });
 
-            var settingsBtn = UiFactory.MakeButton(panel.transform, "Settings", new Vector2(230f, -600f),
-                new Vector2(420f, 110f), new Color(0.87f, 0.78f, 0.62f), new Color(0.3f, 0.2f, 0.1f));
+            var settingsBtn = UiFactory.MakeIconButton(panel.transform, "settings", "Settings",
+                new Vector2(230f, -600f), new Vector2(420f, 130f),
+                new Color(0.87f, 0.78f, 0.62f), new Color(0.3f, 0.2f, 0.1f));
             settingsBtn.onClick.AddListener(() =>
             {
                 SoundManager.Instance?.PlayButton();
                 BuildSettingsOverlay();
             });
 
-            MakeComingSoonButton(panel.transform, "Leaderboard", new Vector2(-340f, -740f));
-            MakeComingSoonButton(panel.transform, "Daily Challenge", new Vector2(0f, -740f));
-            MakeComingSoonButton(panel.transform, "Store", new Vector2(340f, -740f));
+            MakeComingSoonButton(panel.transform, "leaderboard", "Leaderboard", new Vector2(-340f, -740f));
+            MakeComingSoonButton(panel.transform, "daily_challenge", "Daily Challenge", new Vector2(0f, -740f));
+
+            var shopBtn = UiFactory.MakeIconButton(panel.transform, "shop", "Shop",
+                new Vector2(340f, -740f), new Vector2(300f, 120f),
+                new Color(0.8f, 0.75f, 0.7f), new Color(0.35f, 0.25f, 0.2f));
+            shopBtn.onClick.AddListener(() =>
+            {
+                SoundManager.Instance?.PlayButton();
+                BuildShopOverlay();
+            });
 
             var reset = UiFactory.MakeButton(panel.transform, "Reset Progress", new Vector2(0f, -880f),
                 new Vector2(380f, 90f), new Color(0.8f, 0.75f, 0.7f), new Color(0.35f, 0.25f, 0.2f));
@@ -270,17 +289,17 @@ namespace AnimalGrid.Gameplay
             });
         }
 
-        private void MakeComingSoonButton(Transform parent, string label, Vector2 pos)
+        private void MakeComingSoonButton(Transform parent, string iconKey, string label, Vector2 pos)
         {
-            var btn = UiFactory.MakeButton(parent, label, pos,
-                new Vector2(300f, 100f), new Color(0.8f, 0.75f, 0.7f), new Color(0.35f, 0.25f, 0.2f));
+            var btn = UiFactory.MakeIconButton(parent, iconKey, label, pos,
+                new Vector2(300f, 120f), new Color(0.8f, 0.75f, 0.7f), new Color(0.35f, 0.25f, 0.2f));
             btn.onClick.AddListener(() =>
             {
                 SoundManager.Instance?.PlayButton();
                 ShowComingSoon(label);
             });
 
-            UiFactory.MakeText(parent, "soon", pos + new Vector2(115f, 62f),
+            UiFactory.MakeText(parent, "soon", pos + new Vector2(115f, 72f),
                 new Vector2(90f, 40f), 26, new Color(0.95f, 0.55f, 0.15f));
         }
 
@@ -470,6 +489,102 @@ namespace AnimalGrid.Gameplay
             UiFactory.MakeText(root.transform, unlocked ? Worlds.DisplayName(animalId) : "???",
                 new Vector2(0f, -70f), new Vector2(160f, 50f), 32,
                 unlocked ? new Color(0.35f, 0.22f, 0.15f) : new Color(0.6f, 0.55f, 0.5f));
+        }
+
+        // ---------- Shop screen ----------
+
+        private void BuildShopOverlay()
+        {
+            var panel = UiFactory.MakePanel(canvas.transform, new Color(0.97f, 0.94f, 0.89f, 1f));
+
+            UiFactory.MakeText(panel.transform, "Shop", new Vector2(0f, 830f),
+                new Vector2(700f, 140f), 84, new Color(0.35f, 0.22f, 0.15f));
+
+            var back = UiFactory.MakeButton(panel.transform, "Back", new Vector2(-400f, 840f),
+                new Vector2(220f, 90f), new Color(0.8f, 0.75f, 0.7f), new Color(0.35f, 0.25f, 0.2f));
+            back.onClick.AddListener(() =>
+            {
+                SoundManager.Instance?.PlayButton();
+                Destroy(panel);
+            });
+
+            var balanceText = UiFactory.MakeText(panel.transform, "", new Vector2(0f, 700f),
+                new Vector2(700f, 90f), 48, new Color(0.6f, 0.45f, 0.05f));
+            var bankText = UiFactory.MakeText(panel.transform, "", new Vector2(0f, 630f),
+                new Vector2(700f, 70f), 34, new Color(0.5f, 0.4f, 0.32f));
+
+            System.Action refreshBalance = null;
+            refreshBalance = () =>
+            {
+                balanceText.text = "Coins: " + CoinSave.Balance;
+                bankText.text = "Bonus hints banked: " + HintBankSave.BonusHints;
+            };
+            refreshBalance();
+
+            UiFactory.MakeText(panel.transform,
+                "Hints point at the next correct square mid-level. Buy a pack here and it's\n"
+                + "ready the moment your 3 free hints for the level run out.",
+                new Vector2(0f, 500f), new Vector2(900f, 130f), 32, new Color(0.55f, 0.45f, 0.35f));
+
+            MakeShopItem(panel.transform, new Vector2(-240f, 250f), "Hint Pack",
+                "+" + ShopCatalog.HintPackHints + " hints", ShopCatalog.HintPackCost,
+                ShopCatalog.TryBuyHintPack, refreshBalance);
+
+            MakeShopItem(panel.transform, new Vector2(240f, 250f), "Hint Value Pack",
+                "+" + ShopCatalog.HintValuePackHints + " hints", ShopCatalog.HintValuePackCost,
+                ShopCatalog.TryBuyHintValuePack, refreshBalance);
+
+            UiFactory.MakeText(panel.transform,
+                "Out of lives mid-level? You can also continue with coins\nright from the fail screen — no need to come back here.",
+                new Vector2(0f, -140f), new Vector2(900f, 120f), 32, new Color(0.55f, 0.45f, 0.35f));
+
+            UiFactory.MakeText(panel.transform,
+                "Earn coins by clearing levels — bigger boards and perfect\n('Exact!') clears pay out more.",
+                new Vector2(0f, -260f), new Vector2(900f, 100f), 30, new Color(0.6f, 0.55f, 0.5f));
+        }
+
+        private void MakeShopItem(Transform parent, Vector2 pos, string title, string subtitle,
+            int cost, System.Func<bool> tryBuy, System.Action onPurchased)
+        {
+            var root = new GameObject("ShopItem_" + title, typeof(RectTransform), typeof(Image));
+            root.transform.SetParent(parent, false);
+            var rect = root.transform as RectTransform;
+            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = pos;
+            rect.sizeDelta = new Vector2(420f, 380f);
+            var bg = root.GetComponent<Image>();
+            bg.sprite = UiSprites.RoundedSquare;
+            bg.color = new Color(1f, 1f, 1f, 0.6f);
+
+            UiFactory.MakeText(root.transform, title, new Vector2(0f, 120f),
+                new Vector2(380f, 80f), 44, new Color(0.35f, 0.22f, 0.15f));
+            UiFactory.MakeText(root.transform, subtitle, new Vector2(0f, 40f),
+                new Vector2(380f, 60f), 36, new Color(0.5f, 0.4f, 0.32f));
+
+            var buy = UiFactory.MakeButton(root.transform, cost + " coins", new Vector2(0f, -130f),
+                new Vector2(340f, 110f), new Color(0.45f, 0.75f, 0.35f), Color.white, artKey: "button_gold");
+            buy.onClick.AddListener(() =>
+            {
+                if (tryBuy())
+                {
+                    SoundManager.Instance?.PlayButton();
+                    onPurchased?.Invoke();
+                }
+                else
+                {
+                    SoundManager.Instance?.PlayInvalid();
+                    StartCoroutine(CloseAfter(MakeToast(root.transform, "Not enough coins"), 1.1f));
+                }
+            });
+        }
+
+        private GameObject MakeToast(Transform parent, string message)
+        {
+            var go = new GameObject("Toast", typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            UiFactory.MakeText(go.transform, message, new Vector2(0f, -200f),
+                new Vector2(380f, 60f), 30, new Color(0.85f, 0.2f, 0.2f));
+            return go;
         }
 
         // ---------- Level start ----------
