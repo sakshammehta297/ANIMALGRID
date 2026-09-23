@@ -1,9 +1,10 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
-using UnityEngine.Video;
 using AnimalGrid.Core;
 using AnimalGrid.Audio;
 using AnimalGrid.Save;
@@ -12,7 +13,9 @@ namespace AnimalGrid.Gameplay
 {
     /// <summary>
     /// Entry point: home (static bg) + collection + settings + coming-soon + level start (game bg).
+    /// Supports edit-mode UI preview via the Inspector dropdown.
     /// </summary>
+    [ExecuteAlways]
     public class GameplayBootstrap : MonoBehaviour
     {
         public static bool ReturnToGame;
@@ -23,21 +26,41 @@ namespace AnimalGrid.Gameplay
         [Tooltip("0 = use saved campaign. Set a number to test a specific level of the current world.")]
         public int overrideLevelNumber = 0;
 
-        [Tooltip("Optional looping video played behind the Home screen UI (off by default).")]
-        public VideoClip homeVideo;
+        // ---------- Editor Preview ----------
+
+        public enum PreviewScreen { None, Home, Settings, Collection, Shop }
+
+        [Header("Editor Preview (Edit Mode Only)")]
+        [Tooltip("Select a screen to preview in the editor without hitting Play.")]
+        public PreviewScreen editorPreview = PreviewScreen.None;
+
+        private PreviewScreen lastPreview = PreviewScreen.None;
+
+        // ---------- Runtime fields ----------
 
         private CampaignState campaign;
         private Image backgroundImage;
-        private VideoPlayer videoPlayer;
-        private RenderTexture videoRT;
-        private GameObject videoHost;
-        private GameObject videoImageGo;
+        private CancellationTokenSource generationCts;
 
         private static readonly Color HomeCream = new Color(0.97f, 0.94f, 0.89f);
         private static readonly Color GameCream = new Color(0.94f, 0.92f, 0.88f);
 
+        // Outline colors sampled from the design (tweak here if needed)
+        private static readonly Color OutlineOrange = new Color(0.80f, 0.55f, 0.25f);
+        private static readonly Color OutlineBrown = new Color(0.65f, 0.35f, 0.20f);
+
+        // ---------- Lifecycle ----------
+
         private void Start()
         {
+            // [ExecuteAlways] guard: skip all game logic in edit mode
+            if (!Application.isPlaying) return;
+
+            // Clean up any leftover edit-mode preview objects
+            ClearPreview();
+            editorPreview = PreviewScreen.None;
+            lastPreview = PreviewScreen.None;
+
             if (canvas == null)
             {
                 GameObject found = GameObject.Find("Canvas");
@@ -64,17 +87,99 @@ namespace AnimalGrid.Gameplay
                 ReturnToGame = false;
                 StartLevel();
             }
-                            else
+            else
+            {
+                BuildHomeOverlay();
+            }
+
+            SoundManager.Instance?.PlayMusic("home");
+        }
+
+        private void Update()
+        {
+            // Edit Mode only: handle preview screen changes
+            if (!Application.isPlaying)
+            {
+                if (editorPreview != lastPreview)
                 {
-                    BuildVideoBackground();
-                    BuildHomeOverlay();
+                    ClearPreview();
+                    if (editorPreview != PreviewScreen.None)
+                    {
+                        BuildPreview(editorPreview);
+                    }
+                    lastPreview = editorPreview;
                 }
-                SoundManager.Instance?.PlayMusic("home");
+            }
         }
 
         private void OnDestroy()
         {
-            ReleaseVideo();
+            if (Application.isPlaying)
+            {
+                generationCts?.Cancel();
+                generationCts?.Dispose();
+                generationCts = null;
+            }
+            else
+            {
+                ClearPreview();
+            }
+        }
+
+        // ---------- Editor Preview ----------
+
+        private void BuildPreview(PreviewScreen screen)
+        {
+            if (canvas == null)
+            {
+                GameObject found = GameObject.Find("Canvas");
+                if (found != null) canvas = found.GetComponent<Canvas>();
+            }
+            if (canvas == null)
+            {
+                var go = new GameObject("Canvas", typeof(RectTransform));
+                canvas = go.AddComponent<Canvas>();
+                canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+                go.AddComponent<CanvasScaler>();
+                go.AddComponent<GraphicRaycaster>();
+            }
+
+            if (backgroundImage == null)
+            {
+                BuildBackground();
+            }
+            SetBackground("background", HomeCream);
+
+            if (campaign == null)
+            {
+                campaign = CampaignState.Fresh();
+            }
+
+            switch (screen)
+            {
+                case PreviewScreen.Home:       BuildHomeOverlay();       break;
+                case PreviewScreen.Settings:   BuildSettingsOverlay();   break;
+                case PreviewScreen.Collection: BuildCollectionOverlay(); break;
+                case PreviewScreen.Shop:       BuildShopOverlay();       break;
+            }
+        }
+
+        private void ClearPreview()
+        {
+            if (canvas == null) return;
+
+            for (int i = canvas.transform.childCount - 1; i >= 0; i--)
+            {
+                var child = canvas.transform.GetChild(i);
+                if (child.name == "Background") continue;
+
+                if (Application.isPlaying)
+                    Destroy(child.gameObject);
+                else
+                    DestroyImmediate(child.gameObject);
+            }
+
+            backgroundImage = null;
         }
 
         // ---------- Backgrounds ----------
@@ -109,64 +214,6 @@ namespace AnimalGrid.Gameplay
             }
         }
 
-        // ---------- Optional looping video (only if Animated Home is ON) ----------
-
-        private void BuildVideoBackground()
-        {
-            if (homeVideo == null || !SettingsSave.AnimatedHome) return;
-
-            videoRT = new RenderTexture(720, 1280, 0, RenderTextureFormat.ARGB32);
-
-            videoHost = new GameObject("HomeVideoPlayer");
-            videoPlayer = videoHost.AddComponent<VideoPlayer>();
-            videoPlayer.source = VideoSource.VideoClip;
-            videoPlayer.clip = homeVideo;
-            videoPlayer.renderMode = VideoRenderMode.RenderTexture;
-            videoPlayer.targetTexture = videoRT;
-            videoPlayer.isLooping = true;
-            videoPlayer.playOnAwake = false;
-            videoPlayer.audioOutputMode = VideoAudioOutputMode.None;
-            videoPlayer.aspectRatio = VideoAspectRatio.Stretch;
-            videoPlayer.Play();
-
-            videoImageGo = new GameObject("VideoBackground", typeof(RectTransform), typeof(RawImage));
-            videoImageGo.transform.SetParent(canvas.transform, false);
-            var rect = videoImageGo.transform as RectTransform;
-            rect.anchorMin = Vector2.zero;
-            rect.anchorMax = Vector2.one;
-            rect.offsetMin = Vector2.zero;
-            rect.offsetMax = Vector2.zero;
-            var img = videoImageGo.GetComponent<RawImage>();
-            img.texture = videoRT;
-            img.raycastTarget = false;
-        }
-
-        private void ReleaseVideo()
-        {
-            if (videoPlayer != null)
-            {
-                videoPlayer.Stop();
-                Destroy(videoPlayer);
-                videoPlayer = null;
-            }
-            if (videoHost != null)
-            {
-                Destroy(videoHost);
-                videoHost = null;
-            }
-            if (videoImageGo != null)
-            {
-                Destroy(videoImageGo);
-                videoImageGo = null;
-            }
-            if (videoRT != null)
-            {
-                videoRT.Release();
-                Destroy(videoRT);
-                videoRT = null;
-            }
-        }
-
         // ---------- Home screen ----------
 
         private void BuildHomeOverlay()
@@ -174,11 +221,11 @@ namespace AnimalGrid.Gameplay
             var panel = UiFactory.MakePanel(canvas.transform, new Color(0f, 0f, 0f, 0f));
             panel.GetComponent<Image>().raycastTarget = false;
 
-            var logo = UiFactory.MakeArtImage(panel.transform, "logo", new Vector2(0f, 620f), new Vector2(950f, 260f));
+            var logo = UiFactory.MakeArtImage(panel.transform, "logo", new Vector2(15f, 491f), new Vector2(950f, 401f));
             if (logo == null)
             {
-                UiFactory.MakeText(panel.transform, "ANIMAL GRID", new Vector2(0f, 620f),
-                    new Vector2(950f, 200f), 100, new Color(0.35f, 0.22f, 0.15f));
+                UiFactory.MakeText(panel.transform, "ANIMAL GRID", new Vector2(15f, 491f),
+                    new Vector2(950f, 401f), 100, new Color(0.35f, 0.22f, 0.15f));
             }
 
             if (campaign.gameCompleted)
@@ -191,9 +238,15 @@ namespace AnimalGrid.Gameplay
             else
             {
                 var world = Worlds.Get(campaign.worldIndex);
-                UiFactory.MakeText(panel.transform,
+
+                // World title: size 61, best-fit 14-62, white, brown outline (3,4)
+                var worldText = UiFactory.MakeText(panel.transform,
                     "World " + (campaign.worldIndex + 1) + " - " + world.name,
-                    new Vector2(0f, 480f), new Vector2(800f, 100f), 46, new Color(0.55f, 0.4f, 0.3f));
+                    new Vector2(15f, 241f), new Vector2(800f, 100f), 61, Color.white,
+                    false, 14, 62);
+                var worldOutline = worldText.gameObject.AddComponent<Outline>();
+                worldOutline.effectColor = OutlineBrown;
+                worldOutline.effectDistance = new Vector2(3f, 4f);
 
                 var mascot = ArtLoader.Get("mascot");
                 if (mascot != null)
@@ -214,7 +267,8 @@ namespace AnimalGrid.Gameplay
                     ? "Start - Level 1"
                     : "Continue - Level " + campaign.levelInWorld;
 
-                var continueBtn = UiFactory.MakeButton(panel.transform, label, new Vector2(0f, -220f),
+                // Continue button: label 56/14/56 (MakeButton default), white text
+                var continueBtn = UiFactory.MakeButton(panel.transform, label, new Vector2(0f, -143f),
                     new Vector2(640f, 150f), new Color(0.45f, 0.75f, 0.35f), Color.white, artKey: "button_gold");
                 continueBtn.onClick.AddListener(() =>
                 {
@@ -238,18 +292,23 @@ namespace AnimalGrid.Gameplay
                     barLabel = "Level " + campaign.levelInWorld + "/180  ·  Next: "
                         + Worlds.DisplayName(world.animalIds[unlockedCount]) + " " + pts + "/" + nextTh;
                 }
-                UiFactory.MakeUnlockBar(panel.transform, new Vector2(0.5f, 0.5f),
-                    new Vector2(0f, -400f), fraction, barLabel, new Color(0.5f, 0.4f, 0.32f));
+
+                // Unlock bar at Y = -330; label white 30/14/30 + orange outline (2,2)
+                var barText = UiFactory.MakeUnlockBar(panel.transform, new Vector2(0.5f, 0.5f),
+                    new Vector2(0f, -330f), fraction, barLabel, Color.white);
+                if (barText != null)
+                {
+                    var barOutline = barText.gameObject.AddComponent<Outline>();
+                    barOutline.effectColor = OutlineOrange;
+                    barOutline.effectDistance = new Vector2(2f, 2f);
+                }
             }
 
-            // Icon-on-top tiles (see UiFactory.MakeIconButton): each looks for
-            // Resources/Art/Icons/icon_<key>.png and falls back to a text-only
-            // tile automatically if that art doesn't exist yet, so this row is
-            // safe to ship today and will pick up icons with zero code changes
-            // as art lands. "shop" already resolves (see project README).
+            // Collection / Settings: label 50, min 5, white
             var collectionBtn = UiFactory.MakeIconButton(panel.transform, "collection", "Collection",
-                new Vector2(-230f, -600f), new Vector2(420f, 130f),
-                new Color(0.87f, 0.78f, 0.62f), new Color(0.3f, 0.2f, 0.1f));
+                new Vector2(-230f, -469f), new Vector2(420f, 205f),
+                new Color(0.87f, 0.78f, 0.62f), Color.white,
+                labelFontSize: 50, labelMinSize: 5);
             collectionBtn.onClick.AddListener(() =>
             {
                 SoundManager.Instance?.PlayButton();
@@ -257,28 +316,31 @@ namespace AnimalGrid.Gameplay
             });
 
             var settingsBtn = UiFactory.MakeIconButton(panel.transform, "settings", "Settings",
-                new Vector2(230f, -600f), new Vector2(420f, 130f),
-                new Color(0.87f, 0.78f, 0.62f), new Color(0.3f, 0.2f, 0.1f));
+                new Vector2(230f, -469f), new Vector2(420f, 205f),
+                new Color(0.87f, 0.78f, 0.62f), Color.white,
+                labelFontSize: 50, labelMinSize: 5);
             settingsBtn.onClick.AddListener(() =>
             {
                 SoundManager.Instance?.PlayButton();
                 BuildSettingsOverlay();
             });
 
-            MakeComingSoonButton(panel.transform, "leaderboard", "Leaderboard", new Vector2(-340f, -740f));
-            MakeComingSoonButton(panel.transform, "daily_challenge", "Daily Challenge", new Vector2(0f, -740f));
+            MakeComingSoonButton(panel.transform, "leaderboard", "Leaderboard", new Vector2(-340f, -601f));
+            MakeComingSoonButton(panel.transform, "daily_challenge", "Daily Challenge", new Vector2(0f, -601f));
 
+            // Shop: label 30/14/30 (default), white
             var shopBtn = UiFactory.MakeIconButton(panel.transform, "shop", "Shop",
-                new Vector2(340f, -740f), new Vector2(300f, 120f),
-                new Color(0.8f, 0.75f, 0.7f), new Color(0.35f, 0.25f, 0.2f));
+                new Vector2(340f, -601f), new Vector2(300f, 169f),
+                new Color(0.8f, 0.75f, 0.7f), Color.white);
             shopBtn.onClick.AddListener(() =>
             {
                 SoundManager.Instance?.PlayButton();
                 BuildShopOverlay();
             });
 
-            var reset = UiFactory.MakeButton(panel.transform, "Reset Progress", new Vector2(0f, -880f),
-                new Vector2(380f, 90f), new Color(0.8f, 0.75f, 0.7f), new Color(0.35f, 0.25f, 0.2f));
+            // Reset: label 56/14/56 (MakeButton default), white
+            var reset = UiFactory.MakeButton(panel.transform, "Reset Progress", new Vector2(0f, -793f),
+                new Vector2(448f, 214f), new Color(0.8f, 0.75f, 0.7f), Color.white);
             reset.onClick.AddListener(() =>
             {
                 SoundManager.Instance?.PlayButton();
@@ -291,15 +353,18 @@ namespace AnimalGrid.Gameplay
 
         private void MakeComingSoonButton(Transform parent, string iconKey, string label, Vector2 pos)
         {
+            // Label 30/14/30 (default), white
             var btn = UiFactory.MakeIconButton(parent, iconKey, label, pos,
-                new Vector2(300f, 120f), new Color(0.8f, 0.75f, 0.7f), new Color(0.35f, 0.25f, 0.2f));
+                new Vector2(300f, 169f), new Color(0.8f, 0.75f, 0.7f), Color.white);
             btn.onClick.AddListener(() =>
             {
                 SoundManager.Instance?.PlayButton();
                 ShowComingSoon(label);
             });
 
-            UiFactory.MakeText(parent, "soon", pos + new Vector2(115f, 72f),
+            // "soon" badge centered horizontally on the tile, near its top
+            // (button row Y = -601, badge Y = -551.5 → offset +49.5)
+            UiFactory.MakeText(parent, "soon", pos + new Vector2(0f, 49.5f),
                 new Vector2(90f, 40f), 26, new Color(0.95f, 0.55f, 0.15f));
         }
 
@@ -346,12 +411,8 @@ namespace AnimalGrid.Gameplay
                 () => SettingsSave.VibrationOn,
                 v => { SettingsSave.VibrationOn = v; });
 
-            MakeToggleRow(panel.transform, "Animated Home", -160f,
-                () => SettingsSave.AnimatedHome,
-                v => { SettingsSave.AnimatedHome = v; });
-
             UiFactory.MakeText(panel.transform,
-                "Music plays when a music_home clip exists in Resources/Audio.\nAnimated Home applies the next time Home opens.",
+                "Music plays when a music_home clip exists in Resources/Audio.",
                 new Vector2(0f, -420f), new Vector2(900f, 140f), 34, new Color(0.55f, 0.45f, 0.35f));
         }
 
@@ -591,7 +652,6 @@ namespace AnimalGrid.Gameplay
 
         private void StartLevel()
         {
-            ReleaseVideo();
             SetBackground("background_game", GameCream);
 
             int levelNumber = overrideLevelNumber > 0 ? overrideLevelNumber : campaign.levelInWorld;
@@ -615,12 +675,15 @@ namespace AnimalGrid.Gameplay
             int seed = (campaign.worldIndex + 1) * 100000 + levelNumber * 7919 + 17;
             var regionAnimals = RosterDistributor.Distribute(unlocked, config.gridSize, seed);
 
-            var boardGo = new GameObject("Board", typeof(RectTransform));
-            boardGo.transform.SetParent(canvas.transform, false);
-            var board = boardGo.AddComponent<BoardView>();
+            // --- Show a lightweight "Generating…" overlay ---
+            var loadingPanel = UiFactory.MakePanel(canvas.transform, new Color(0f, 0f, 0f, 0.45f));
+            UiFactory.MakeText(loadingPanel.transform, "Generating puzzle…",
+                new Vector2(0f, 0f), new Vector2(700f, 120f), 56, Color.white);
 
+            // --- Kick off async generation on a background thread ---
+            generationCts = new CancellationTokenSource();
             var generator = new PuzzleGenerator();
-            var puzzle = generator.Generate(new GenerationSettings
+            var settings = new GenerationSettings
             {
                 levelId = levelNumber,
                 gridSize = config.gridSize,
@@ -628,13 +691,40 @@ namespace AnimalGrid.Gameplay
                 difficulty = config.difficultyTarget,
                 randomSeed = seed,
                 animalIds = regionAnimals
-            });
+            };
+
+            Task<PuzzleDefinition> task = generator.GenerateAsync(settings, generationCts.Token);
+
+            StartCoroutine(WaitForPuzzle(task, loadingPanel, levelNumber, config));
+        }
+
+        private IEnumerator WaitForPuzzle(
+            Task<PuzzleDefinition> task,
+            GameObject loadingPanel,
+            int levelNumber,
+            LevelConfig config)
+        {
+            while (!task.IsCompleted)
+            {
+                yield return null;
+            }
+
+            if (loadingPanel != null) Destroy(loadingPanel);
+
+            if (generationCts == null || generationCts.IsCancellationRequested)
+                yield break;
+
+            PuzzleDefinition puzzle = task.Result;
 
             if (puzzle == null)
             {
                 Debug.LogError("Puzzle generation failed!");
-                return;
+                yield break;
             }
+
+            var boardGo = new GameObject("Board", typeof(RectTransform));
+            boardGo.transform.SetParent(canvas.transform, false);
+            var board = boardGo.AddComponent<BoardView>();
 
             board.RenderBoard(puzzle);
 

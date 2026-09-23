@@ -22,13 +22,20 @@ namespace AnimalGrid.Gameplay
         private GameObject animalRoot;
         private RectTransform cellRect;
 
+        private void Awake()
+        {
+            cellRect = GetComponent<RectTransform>();
+            if (background == null) background = GetComponent<Image>();
+        }
+
         public void Setup(int row, int column, float size, Color regionColor)
         {
             this.row = row;
             this.column = column;
 
-            cellRect = GetComponent<RectTransform>();
+            if (cellRect == null) cellRect = GetComponent<RectTransform>();
             cellRect.sizeDelta = new Vector2(size, size);
+            cellRect.localScale = Vector3.one;
 
             if (background == null) background = GetComponent<Image>();
             background.sprite = UiSprites.RoundedSquare;
@@ -37,6 +44,36 @@ namespace AnimalGrid.Gameplay
             // Staggered pop-in as the board loads, sweeping diagonally across the grid.
             float delay = (row + column) * 0.025f;
             StartCoroutine(PopIn(cellRect, delay, 0.3f));
+        }
+
+        /// <summary>
+        /// Resets all visual state so this cell can be reused from the pool.
+        /// Stops running animations, hides children, resets scale.
+        /// </summary>
+        public void ResetForPool()
+        {
+            StopAllCoroutines();
+
+            if (cellRect != null)
+                cellRect.localScale = Vector3.one;
+
+            if (xRoot != null)
+            {
+                xRoot.transform.localScale = Vector3.one;
+                xRoot.SetActive(false);
+            }
+
+            if (animalRoot != null)
+            {
+                animalRoot.transform.localScale = Vector3.one;
+                animalRoot.SetActive(false);
+            }
+
+            if (background != null)
+                background.color = Color.white;
+
+            row = 0;
+            column = 0;
         }
 
         public void SetRegionColor(Color color)
@@ -50,7 +87,7 @@ namespace AnimalGrid.Gameplay
             {
                 xRoot = new GameObject("XMark", typeof(RectTransform));
                 xRoot.transform.SetParent(transform, false);
-                xRoot.SetActive(false); // so the "was it hidden before?" check below fires on first creation too
+                xRoot.SetActive(false);
                 MakeBar(45f);
                 MakeBar(-45f);
             }
@@ -88,13 +125,12 @@ namespace AnimalGrid.Gameplay
             {
                 animalRoot = new GameObject("Animal", typeof(RectTransform), typeof(Image));
                 animalRoot.transform.SetParent(transform, false);
-                animalRoot.SetActive(false); // so the "was it hidden before?" check below fires on first creation too
+                animalRoot.SetActive(false);
                 var rect = animalRoot.transform as RectTransform;
                 float parentSize = (transform as RectTransform).sizeDelta.x;
                 rect.sizeDelta = new Vector2(parentSize * 0.92f, parentSize * 0.92f);
                 animalRoot.GetComponent<Image>().raycastTarget = false;
             }
-
             if (animalRoot == null) return;
 
             if (visible)
@@ -112,7 +148,6 @@ namespace AnimalGrid.Gameplay
                     img.sprite = UiSprites.Circle;
                     img.color = fallbackColor;
                 }
-
                 bool wasHidden = !animalRoot.activeSelf;
                 animalRoot.SetActive(true);
                 if (wasHidden) StartCoroutine(PopIn(animalRoot.transform as RectTransform, 0f, 0.22f));
@@ -175,7 +210,7 @@ namespace AnimalGrid.Gameplay
             {
                 t += Time.deltaTime;
                 float p = t / duration;
-                float k = Mathf.Sin(p * Mathf.PI); // rises then settles — one clean bounce
+                float k = Mathf.Sin(p * Mathf.PI);
                 target.localScale = Vector3.one * (1f + (peak - 1f) * Mathf.Max(k, 0f));
                 yield return null;
             }

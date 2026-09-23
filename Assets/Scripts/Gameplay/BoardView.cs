@@ -8,6 +8,7 @@ namespace AnimalGrid.Gameplay
 {
     /// <summary>
     /// Builds the N x N grid visually at runtime. Fully dynamic - no hard-coded sizes!
+    /// Uses object pooling to reuse cells across levels instead of creating/destroying them.
     /// </summary>
     public class BoardView : MonoBehaviour
     {
@@ -34,6 +35,7 @@ namespace AnimalGrid.Gameplay
         };
 
         private readonly List<CellView> cells = new List<CellView>();
+        private CellPool cellPool;
 
         public CellView GetCellView(int row, int column)
         {
@@ -58,7 +60,19 @@ namespace AnimalGrid.Gameplay
         public void RenderBoard(PuzzleDefinition definition)
         {
             puzzle = definition;
-            ClearCells();
+
+            // Initialize pool on first use, or recycle all cells on subsequent levels
+            if (cellPool == null)
+            {
+                int maxCells = ProgressionConfig.MaxGridSize * ProgressionConfig.MaxGridSize; // 100
+                cellPool = new CellPool(maxCells, CreateCell, ResetCell);
+            }
+            else
+            {
+                cellPool.ReturnAll();
+            }
+
+            cells.Clear();
 
             var rect = GetComponent<RectTransform>();
             rect.sizeDelta = new Vector2(boardPixels, boardPixels);
@@ -70,25 +84,43 @@ namespace AnimalGrid.Gameplay
             {
                 for (int c = 0; c < n; c++)
                 {
-                    var go = new GameObject("Cell_" + r + "_" + c, typeof(RectTransform), typeof(Image));
-                    go.transform.SetParent(transform, false);
+                    CellView view = cellPool.GetCell(transform);
+                    if (view == null) continue;
 
-                    var view = go.AddComponent<CellView>();
-                    var cellRect = go.transform as RectTransform;
+                    var cellRect = view.GetComponent<RectTransform>();
                     float x = -boardPixels / 2f + cellSize / 2f + c * (cellSize + spacing);
                     float y = boardPixels / 2f - cellSize / 2f - r * (cellSize + spacing);
                     cellRect.anchoredPosition = new Vector2(x, y);
 
                     view.Setup(r, c, cellSize, TintFor(definition, r, c));
-
-                    int rr = r, cc = c;
-                    var button = go.AddComponent<Button>();
-                    button.onClick.AddListener(() => OnCellClicked?.Invoke(rr, cc));
-
                     cells.Add(view);
                 }
             }
         }
+
+        // ---------- Pool factory & reset ----------
+
+        private CellView CreateCell(Transform parent)
+        {
+            var go = new GameObject("Cell", typeof(RectTransform), typeof(Image), typeof(Button));
+            if (parent != null) go.transform.SetParent(parent, false);
+            var view = go.AddComponent<CellView>();
+
+            // Permanent listener: reads the CURRENT row/column from CellView,
+            // so it automatically works when the cell is reused at a new position.
+            var button = go.GetComponent<Button>();
+            button.onClick.AddListener(() => OnCellClicked?.Invoke(view.row, view.column));
+
+            go.SetActive(false);
+            return view;
+        }
+
+        private void ResetCell(CellView cell)
+        {
+            cell.ResetForPool();
+        }
+
+        // ---------- Helpers ----------
 
         private Color TintFor(PuzzleDefinition definition, int r, int c)
         {
@@ -97,15 +129,6 @@ namespace AnimalGrid.Gameplay
             if (index < 0) index = 0;
             Color baseColor = Palette[index % Palette.Length];
             return Color.Lerp(Color.white, baseColor, 0.45f);
-        }
-
-        private void ClearCells()
-        {
-            foreach (var cell in cells)
-            {
-                if (cell != null) Destroy(cell.gameObject);
-            }
-            cells.Clear();
         }
     }
 }

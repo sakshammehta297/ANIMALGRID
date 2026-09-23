@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace AnimalGrid.Core
 {
@@ -69,6 +71,24 @@ namespace AnimalGrid.Core
             return null;
         }
 
+        /// <summary>
+        /// Runs Generate() on a background thread so the Unity main thread
+        /// is never blocked. Supports cancellation if the user navigates away.
+        /// Returns the puzzle, or null if generation failed / was cancelled.
+        /// </summary>
+        public Task<PuzzleDefinition> GenerateAsync(
+            GenerationSettings settings,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.Run(() =>
+            {
+                if (cancellationToken.IsCancellationRequested)
+                    return null;
+
+                return Generate(settings);
+            }, cancellationToken);
+        }
+
         private PuzzleDefinition BuildPuzzle(GenerationSettings settings)
         {
             int n = settings.gridSize;
@@ -108,10 +128,6 @@ namespace AnimalGrid.Core
             return puzzle;
         }
 
-        /// <summary>
-        /// Grows N connected color regions, one seeded at each solution cell.
-        /// This produces clean readable color blocks instead of random confetti.
-        /// </summary>
         private void AssignColors(PuzzleDefinition puzzle, List<SolutionPosition> solution)
         {
             int n = puzzle.gridSize;
@@ -165,9 +181,6 @@ namespace AnimalGrid.Core
             frontier.Add(new int[] { nr, nc, region[r, c] });
         }
 
-        /// <summary>
-        /// Recolors one cell of the extra solution so that extra solution becomes invalid.
-        /// </summary>
         private void KillExtraSolution(PuzzleDefinition puzzle, List<SolutionPosition> solution, List<SolutionPosition> extra)
         {
             int n = puzzle.gridSize;

@@ -21,8 +21,13 @@ namespace AnimalGrid.Gameplay
             return panel;
         }
 
+        /// <summary>
+        /// Standard text. Best-fit is always on: fontSize is the ceiling and
+        /// minSize (default 14) the floor. Pass minSize/maxSize to override.
+        /// </summary>
         public static Text MakeText(Transform parent, string content, Vector2 pos, Vector2 size,
-            int fontSize, Color color, bool useDisplayFont = false)
+            int fontSize, Color color, bool useDisplayFont = false,
+            int minSize = -1, int maxSize = -1)
         {
             var go = new GameObject("Text", typeof(RectTransform), typeof(Text));
             go.transform.SetParent(parent, false);
@@ -31,27 +36,17 @@ namespace AnimalGrid.Gameplay
             rect.anchoredPosition = pos;
             rect.sizeDelta = size;
             var text = go.GetComponent<Text>();
-            // Body/Display both fall back to the built-in font until a custom
-            // Resources/Fonts/*.ttf is dropped in, so this is a no-op today and
-            // an automatic upgrade later. Pass useDisplayFont: true for
-            // titles/headers once a Display font exists.
             text.font = useDisplayFont ? UiFonts.Display : UiFonts.Body;
             text.fontSize = fontSize;
             text.alignment = TextAnchor.MiddleCenter;
             text.color = color;
             text.text = content;
             text.raycastTarget = false;
-
-            // Auto-shrink instead of spilling past the button/panel edge —
-            // matters a lot more now that buttons have a busy wood-grain
-            // background art instead of a flat color, where overflowing text
-            // is much more noticeable. fontSize is the ceiling; it only
-            // shrinks for longer labels ("Daily Challenge") or narrower boxes.
             text.horizontalOverflow = HorizontalWrapMode.Wrap;
             text.verticalOverflow = VerticalWrapMode.Truncate;
             text.resizeTextForBestFit = true;
-            text.resizeTextMinSize = Mathf.Min(14, fontSize);
-            text.resizeTextMaxSize = fontSize;
+            text.resizeTextMinSize = minSize > 0 ? minSize : Mathf.Min(14, fontSize);
+            text.resizeTextMaxSize = maxSize > 0 ? maxSize : fontSize;
             return text;
         }
 
@@ -59,15 +54,7 @@ namespace AnimalGrid.Gameplay
         /// Points an Image at real chrome art (Resources/Art/UI/&lt;artKey&gt;) when
         /// available, otherwise falls back to the procedural 9-sliced
         /// RoundedSquare tinted with `fallbackColor`. Always sets Sliced so
-        /// corners stay correct at any element size — for real art, set a
-        /// Border in the Sprite Editor on import, or tune
-        /// image.pixelsPerUnitMultiplier afterwards if corners look too big/small.
-        ///
-        /// When `artKey` is null/empty, this tries `defaultKey` first — so once
-        /// that art exists (e.g. Resources/Art/UI/button_wood.png), every
-        /// caller that didn't ask for something specific picks it up
-        /// automatically with no further code changes anywhere. Pass an
-        /// explicit artKey (e.g. "button_gold") to opt out of that default.
+        /// corners stay correct at any element size.
         /// </summary>
         private static void ApplyChrome(Image img, string artKey, Color fallbackColor, string defaultKey = "button_wood")
         {
@@ -88,8 +75,7 @@ namespace AnimalGrid.Gameplay
 
         /// <summary>
         /// Adds a soft drop-shadow behind an element so it reads with depth even
-        /// with procedural art. Cheap and safe to skip (withShadow: false) for
-        /// tiny/inline elements where it would be visual noise.
+        /// with procedural art.
         /// </summary>
         private static void AddShadow(Transform parent, Vector2 inset)
         {
@@ -109,12 +95,12 @@ namespace AnimalGrid.Gameplay
 
         /// <summary>
         /// Standard pill/rect button: art-ready background, drop shadow, press
-        /// feedback. Pass artKey (e.g. "button_wood") once real chrome art
-        /// exists at Resources/Art/UI/button_wood — until then it falls back to
-        /// the procedural rounded rect tinted with `background`.
+        /// feedback. Label defaults to font size 56 with best-fit; override
+        /// with labelFontSize.
         /// </summary>
         public static Button MakeButton(Transform parent, string label, Vector2 pos, Vector2 size,
-            Color background, Color textColor, string artKey = null, bool withShadow = true)
+            Color background, Color textColor, string artKey = null, bool withShadow = true,
+            int labelFontSize = 56)
         {
             var go = new GameObject("Button", typeof(RectTransform), typeof(Image), typeof(Button));
             go.transform.SetParent(parent, false);
@@ -122,27 +108,21 @@ namespace AnimalGrid.Gameplay
             rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
             rect.anchoredPosition = pos;
             rect.sizeDelta = size;
-
             if (withShadow) AddShadow(go.transform, new Vector2(6f, 12f));
-
             var img = go.GetComponent<Image>();
             ApplyChrome(img, artKey, background);
-
-            MakeText(go.transform, label, Vector2.zero, size, 56, textColor);
+            MakeText(go.transform, label, Vector2.zero, size, labelFontSize, textColor);
             go.AddComponent<UiButtonFeedback>();
             return go.GetComponent<Button>();
         }
 
         /// <summary>
-        /// Icon-on-top, label-below tile button — the pattern used for a bottom
-        /// nav row (Collection / Achievements / Daily Challenge / Shop, etc.).
-        /// The icon is optional: if Resources/Art/Icons/icon_&lt;iconKey&gt; isn't
-        /// present yet, the tile just shows the centered label, so screens can be
-        /// wired up with this today and pick up icons automatically once art
-        /// lands — no code changes needed later.
+        /// Icon-on-top, label-below tile button. Label defaults to font size 30
+        /// (min 14); override with labelFontSize / labelMinSize.
         /// </summary>
         public static Button MakeIconButton(Transform parent, string iconKey, string label,
-            Vector2 pos, Vector2 size, Color background, Color textColor, string artKey = null)
+            Vector2 pos, Vector2 size, Color background, Color textColor, string artKey = null,
+            int labelFontSize = 30, int labelMinSize = -1)
         {
             var go = new GameObject("Button_" + label, typeof(RectTransform), typeof(Image), typeof(Button));
             go.transform.SetParent(parent, false);
@@ -150,12 +130,9 @@ namespace AnimalGrid.Gameplay
             rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
             rect.anchoredPosition = pos;
             rect.sizeDelta = size;
-
             AddShadow(go.transform, new Vector2(4f, 10f));
-
             var img = go.GetComponent<Image>();
             ApplyChrome(img, artKey, background);
-
             var icon = ArtLoader.GetIcon(iconKey);
             float labelY;
             if (icon != null)
@@ -177,23 +154,20 @@ namespace AnimalGrid.Gameplay
             {
                 labelY = 0f; // no icon art yet: center the label in the tile
             }
-
-            MakeText(go.transform, label, new Vector2(0f, labelY), new Vector2(size.x - 16f, 60f), 30, textColor);
+            MakeText(go.transform, label, new Vector2(0f, labelY), new Vector2(size.x - 16f, 60f),
+                labelFontSize, textColor, false, labelMinSize);
             go.AddComponent<UiButtonFeedback>();
             return go.GetComponent<Button>();
         }
 
         /// <summary>
         /// Full-art image with a safe "nothing yet" fallback: returns null and
-        /// adds no GameObject at all if Resources/Art/&lt;artName&gt; doesn't exist,
-        /// so callers can just skip/placeholder cleanly (mirrors the mascot
-        /// pattern already used in GameplayBootstrap.BuildHomeOverlay).
+        /// adds no GameObject at all if Resources/Art/&lt;artName&gt; doesn't exist.
         /// </summary>
         public static Image MakeArtImage(Transform parent, string artName, Vector2 pos, Vector2 size)
         {
             var sprite = ArtLoader.Get(artName);
             if (sprite == null) return null;
-
             var go = new GameObject("Art_" + artName, typeof(RectTransform), typeof(Image));
             go.transform.SetParent(parent, false);
             var rect = go.transform as RectTransform;
@@ -209,8 +183,9 @@ namespace AnimalGrid.Gameplay
 
         /// <summary>
         /// The unlock progress bar: rounded track + gold fill + label underneath.
+        /// Returns the label Text so callers can style it further (e.g. Outline).
         /// </summary>
-        public static void MakeUnlockBar(Transform parent, Vector2 anchor, Vector2 pos,
+        public static Text MakeUnlockBar(Transform parent, Vector2 anchor, Vector2 pos,
             float fraction, string label, Color labelColor, string trackArtKey = null, string fillArtKey = null)
         {
             var root = new GameObject("UnlockBar", typeof(RectTransform));
@@ -231,8 +206,7 @@ namespace AnimalGrid.Gameplay
             bg.raycastTarget = false;
 
             // Fill needs Image.Type.Filled (for the horizontal wipe), which can't
-            // be combined with Sliced on the same Image, so it's set up directly
-            // here instead of going through ApplyChrome.
+            // be combined with Sliced on the same Image, so it's set up directly here.
             var fillGo = new GameObject("Fill", typeof(RectTransform), typeof(Image));
             fillGo.transform.SetParent(bgGo.transform, false);
             var fRect = fillGo.transform as RectTransform;
@@ -259,7 +233,7 @@ namespace AnimalGrid.Gameplay
             fill.fillAmount = Mathf.Clamp01(fraction);
             fill.raycastTarget = false;
 
-            MakeText(root.transform, label, new Vector2(0f, -22f), new Vector2(760f, 40f), 30, labelColor);
+            return MakeText(root.transform, label, new Vector2(0f, -22f), new Vector2(760f, 40f), 30, labelColor);
         }
     }
 }
